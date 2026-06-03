@@ -18,7 +18,7 @@ NC='\033[0m'
 BLUEPRINT_NAME="Modpack Installer"
 BLUEPRINT_VERSION="1.0.0"
 PANEL_DIR=""
-REPO_URL="${REPO_URL:-https://github.com/okairu/modpack-installer-blueprint}"
+REPO_URL="${REPO_URL:-https://github.com/UrubuDPIX/modpack-installer}"
 TEMP_DIR="/tmp/modpack-installer-$(date +%s)"
 
 print_banner() {
