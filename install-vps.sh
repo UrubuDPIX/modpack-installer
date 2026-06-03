@@ -556,11 +556,17 @@ main() {
     print_info "Data: $(date '+%Y-%m-%d %H:%M:%S')"
     echo ""
     
-    # Confirmação
-    read -p "Deseja continuar? (s/N): " confirm
-    if [[ ! "$confirm" =~ ^[Ss]$ ]]; then
-        print_info "Instalação cancelada"
-        exit 0
+    # Confirmação (detecta se está sendo pipeado via curl | bash)
+    if [ -t 0 ]; then
+        # Terminal interativo - pergunta normalmente
+        read -p "Deseja continuar? (s/N): " confirm
+        if [[ ! "$confirm" =~ ^[Ss]$ ]]; then
+            print_info "Instalação cancelada"
+            exit 0
+        fi
+    else
+        # Rodando via pipe (curl | bash) - pula confirmação
+        print_info "Modo automatico detectado (pipe). Continuando..."
     fi
     
     echo ""
