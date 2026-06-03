@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+docker-entrypoint.sh
+
+# Build output
+public/assets/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Test coverage
+*.lcov
+.nyc_output/
+
+# Misc
+.env
+.env.local

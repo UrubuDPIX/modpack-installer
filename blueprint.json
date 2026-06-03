@@ -1,0 +1,44 @@
+{
+  "name": "Modpack Installer",
+  "identifier": "modpack-installer",
+  "version": "1.0.0",
+  "author": "Okairu",
+  "description": "Instalador de modpacks e mods para servidores Minecraft",
+  "target": "jexactyl",
+  "minVersion": "3.0.0",
+  "entrypoints": {
+    "client": "client/index.tsx",
+    "server": "server/index.ts"
+  },
+  "components": {
+    "navigation": [
+      {
+        "name": "Modpacks",
+        "icon": "Download",
+        "path": "/modpacks",
+        "permission": "modpacks.view"
+      }
+    ]
+  },
+  "permissions": [
+    {
+      "key": "modpacks.view",
+      "description": "Permite visualizar o instalador de modpacks"
+    },
+    {
+      "key": "modpacks.install",
+      "description": "Permite instalar/reinstalar modpacks"
+    },
+    {
+      "key": "modpacks.downgrade",
+      "description": "Permite fazer downgrade de modpacks"
+    }
+  ],
+  "database": {
+    "migrations": [
+      "database/migrations/001_create_modpacks_table.ts",
+      "database/migrations/002_create_modpack_versions_table.ts",
+      "database/migrations/003_create_server_modpacks_table.ts"
+    ]
+  }
+}

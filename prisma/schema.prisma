@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Modpack {
+  id          String           @id @default(uuid())
+  name        String
+  author      String
+  description String?          @db.Text
+  icon        String?          @db.VarChar(500)
+  downloads   Int              @default(0)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  versions    ModpackVersion[]
+  servers     ServerModpack[]
+
+  @@map("modpacks")
+}
+
+model ModpackVersion {
+  id               String    @id @default(uuid())
+  modpackId        String    @map("modpack_id")
+  name             String    @db.VarChar(100)
+  minecraftVersion String    @map("minecraft_version") @db.VarChar(50)
+  loader           Loader
+  loaderVersion    String    @map("loader_version") @db.VarChar(50)
+  size             String    @db.VarChar(20)
+  downloadUrl      String    @map("download_url") @db.VarChar(500)
+  isServerPack     Boolean   @default(true) @map("is_server_pack")
+  isRelease        Boolean   @default(true) @map("is_release")
+  changelog        String?   @db.Text
+  releasedAt       DateTime  @map("released_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  modpack          Modpack   @relation(fields: [modpackId], references: [id], onDelete: Cascade)
+  servers          ServerModpack[]
+
+  @@map("modpack_versions")
+}
+
+model ServerModpack {
+  id          String           @id @default(uuid())
+  serverId    String           @unique @map("server_id")
+  modpackId   String           @map("modpack_id")
+  versionId   String           @map("version_id")
+  status      InstallStatus    @default(installing)
+  installLog  String?          @map("install_log") @db.Text
+  installedAt DateTime         @default(now()) @map("installed_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  modpack     Modpack          @relation(fields: [modpackId], references: [id], onDelete: Cascade)
+  version     ModpackVersion   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@map("server_modpacks")
+}
+
+enum Loader {
+  Forge
+  Fabric
+  NeoForge
+  Quilt
+}
+
+enum InstallStatus {
+  installing
+  installed
+  error
+}
