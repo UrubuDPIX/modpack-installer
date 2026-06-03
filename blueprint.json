@@ -18,6 +18,14 @@
         "path": "/modpacks",
         "permission": "modpacks.view"
       }
+    ],
+    "adminNavigation": [
+      {
+        "name": "Modpack Settings",
+        "icon": "Cog",
+        "path": "/admin/modpack-settings",
+        "permission": "modpacks.admin"
+      }
     ]
   },
   "permissions": [
@@ -32,13 +40,18 @@
     {
       "key": "modpacks.downgrade",
       "description": "Permite fazer downgrade de modpacks"
+    },
+    {
+      "key": "modpacks.admin",
+      "description": "Acesso as configuracoes de modpacks no admin"
     }
   ],
   "database": {
     "migrations": [
       "database/migrations/001_create_modpacks_table.ts",
       "database/migrations/002_create_modpack_versions_table.ts",
-      "database/migrations/003_create_server_modpacks_table.ts"
+      "database/migrations/003_create_server_modpacks_table.ts",
+      "database/migrations/004_create_modpack_settings_table.ts"
     ]
   }
 }
