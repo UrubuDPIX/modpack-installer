@@ -129,11 +129,4 @@ EOF
 node /tmp/clean_addons.js
 rm -f /tmp/clean_addons.js
 
-echo "=========================================================="
-echo "Reconstruindo o painel..."
-echo "=========================================================="
-
-export NODE_OPTIONS=--openssl-legacy-provider
-yarn run build:production
-
-echo "Se o build foi um sucesso, a aba do Modpacks estará funcionando!"
+echo "Limpeza concluída! Agora rode o install-vps.sh para reinstalar e compilar."
