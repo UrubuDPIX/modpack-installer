@@ -390,7 +390,7 @@ build_frontend() {
     
     if [ "$HAS_NODE" = true ]; then
         print_info "Instalando dependências..."
-        yarn install --frozen-lockfile || yarn install
+        yarn install --frozen-lockfile 2>/dev/null || yarn install
         
         print_info "Compilando assets..."
         
@@ -401,12 +401,25 @@ build_frontend() {
             print_info "Node.js v${NODE_MAJOR} detectado. Usando --openssl-legacy-provider"
         fi
         
-        yarn run build:production || {
-            print_warning "Build falhou. Tentando método alternativo..."
-            yarn run build || npm run build 2>/dev/null || true
-        }
+        # Tenta build de produção primeiro
+        if yarn run build:production 2>&1; then
+            print_success "Frontend compilado (production)"
+        else
+            print_warning "Build production falhou (erros do Jexactyl original). Tentando development..."
+            # Build de development gera bundle mesmo com erros de tipo do Jexactyl
+            if yarn run build 2>&1 || yarn run build:development 2>&1; then
+                print_success "Frontend compilado (development)"
+            else
+                print_warning "Build development também falhou"
+            fi
+        fi
         
-        print_success "Frontend compilado"
+        # Verifica se bundle foi gerado independente de erros
+        if [ -f "$PANEL_DIR/public/assets/bundle"*.js ]; then
+            print_success "Bundle gerado com sucesso"
+        else
+            print_warning "Bundle nao encontrado - o painel pode nao funcionar corretamente"
+        fi
     else
         print_warning "Node.js não disponível. Frontend não compilado."
         print_info "Instale Node.js e execute: yarn run build:production"
