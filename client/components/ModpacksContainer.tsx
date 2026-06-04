@@ -197,16 +197,24 @@ export default function ModpacksContainer() {
       setLoading(true);
       setError(null);
 
-      let url = `https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&pageSize=50`;
-      if (searchQuery) url += `&searchFilter=${encodeURIComponent(searchQuery)}`;
-      if (selectedVersion) url += `&gameVersion=${selectedVersion}`;
+      // Se há busca por texto, usa pageSize maior e sort por relevância (Popularity=2)
+      // para maximizar chances de encontrar o modpack
+      const hasSearch = searchQuery.trim().length > 0;
+      const pageSize = hasSearch ? 100 : 50;
+      const sortField = hasSearch ? 2 : (CF_SORT_MAP[sortBy] || 2);
+
+      let url = `https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&pageSize=${pageSize}&index=0`;
+      if (searchQuery) url += `&searchFilter=${encodeURIComponent(searchQuery.trim())}`;
+      if (selectedVersion) url += `&gameVersion=${encodeURIComponent(selectedVersion)}`;
       if (selectedLoader && CF_LOADER_MAP[selectedLoader]) {
         url += `&modLoaderType=${CF_LOADER_MAP[selectedLoader]}`;
       }
-      if (selectedCategory && CF_CATEGORY_MAP[selectedCategory]) {
+      // Só aplica filtro de categoria se NÃO houver busca por texto
+      // (evita restringir demais resultados de busca)
+      if (!hasSearch && selectedCategory && CF_CATEGORY_MAP[selectedCategory]) {
         url += `&categoryId=${CF_CATEGORY_MAP[selectedCategory]}`;
       }
-      url += `&sortField=${CF_SORT_MAP[sortBy] || 2}`;
+      url += `&sortField=${sortField}`;
       url += `&sortOrder=desc`;
 
       const response = await fetch(url, {
@@ -215,7 +223,7 @@ export default function ModpacksContainer() {
       if (!response.ok) throw new Error("Erro ao buscar modpacks do CurseForge");
       const data = await response.json();
 
-      const hits: ModpackItem[] = (data.data || []).map((mod: any) => {
+      let hits: ModpackItem[] = (data.data || []).map((mod: any) => {
         // Extract loader names from latestFiles
         const loaderTypes: string[] = [];
         if (mod.latestFiles?.[0]?.gameVersions) {
@@ -258,6 +266,25 @@ export default function ModpacksContainer() {
             : null,
         };
       });
+
+      // Re-ordena no cliente para priorizar matches no título quando há busca
+      if (hasSearch && searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase().replace(/\s+/g, " ");
+        const qTokens = q.split(/\s+/);
+        hits.sort((a: ModpackItem, b: ModpackItem) => {
+          const aTitle = a.title.toLowerCase();
+          const bTitle = b.title.toLowerCase();
+          const aExact = aTitle === q ? 100 : aTitle.includes(q) ? 50 : 0;
+          const bExact = bTitle === q ? 100 : bTitle.includes(q) ? 50 : 0;
+          if (aExact !== bExact) return bExact - aExact;
+          // Token matching
+          const aTokens = qTokens.filter((t: string) => aTitle.includes(t)).length;
+          const bTokens = qTokens.filter((t: string) => bTitle.includes(t)).length;
+          if (aTokens !== bTokens) return bTokens - aTokens;
+          // Fallback to downloads
+          return (b.downloads || 0) - (a.downloads || 0);
+        });
+      }
 
       if (providerRef.current === "curseforge") {
         setModpacks(hits);
