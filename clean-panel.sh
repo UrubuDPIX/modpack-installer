@@ -72,10 +72,11 @@ if (fs.existsSync(serverRouterPath)) {
         !line.includes('McModpacksContainer') &&
         !line.includes('McPluginsContainer')
     ).join('\n');
-    // Remove import errado do modpack-installer (com /client/ no path)
-    content = content.replace(/import ModpacksPage from '@\/blueprints\/modpack-installer\/client\/pages\/ModpacksPage';\n?/g, '');
-    // Remove a rota injetada com /client/ no path se houver
-    content = content.replace(/<Route path=\{`\$\{match\.url\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>/g, '');
+    // Remove import do modpack-installer
+    content = content.replace(/import ModpacksPage from '[^']+';\n?/g, '');
+    content = content.replace(/import ModpacksPage from "[^"]+";\n?/g, '');
+    // Remove a rota injetada se houver
+    content = content.replace(/<Route path=\{`\$\{match\.(url|path)\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>/g, '');
     fs.writeFileSync(serverRouterPath, content);
     console.log('✓ ServerRouter.tsx limpo.');
 }

@@ -422,7 +422,42 @@ if (fs.existsSync(serverRouterPath)) {
     }
 }
 
-// 2. Injetar na Navegacao via routes.ts
+// 1. Injetar no ServerRouter.tsx (para registrar a rota no React Router)
+const serverRouterPath = path.join(panelDir, 'resources/scripts/routers/ServerRouter.tsx');
+if (fs.existsSync(serverRouterPath)) {
+    let content = fs.readFileSync(serverRouterPath, 'utf8');
+    
+    // Limpar import e rota antigos se houver
+    content = content.replace(/import ModpacksPage from '[^']+';\n?/g, '');
+    content = content.replace(/import ModpacksPage from "[^"]+";\n?/g, '');
+    content = content.replace(/<Route path=\{`\$\{match\.path\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>/g, '');
+    
+    if (!content.includes('ModpacksPage')) {
+        // Adicionar import
+        const lastImportMatch = [...content.matchAll(/^import .*;$/gm)].pop();
+        if (lastImportMatch) {
+            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/pages/ModpacksPage';\n";
+            content = content.slice(0, lastImportMatch.index + lastImportMatch[0].length) + importLine + content.slice(lastImportMatch.index + lastImportMatch[0].length);
+        }
+        
+        // Injetar a Rota no Switch (antes da rota * ou NotFound)
+        const fileRouteRegex = /<Route path=\{`\$\{match\.path\}\/files`\} exact>[\s\S]*?<\/Route>/;
+        const match = content.match(fileRouteRegex);
+        if (match) {
+            const injectContent = `
+                            <Route path={\`\${match.path}/modpacks\`} exact>
+                                <ModpacksPage />
+                            </Route>`;
+            content = content.slice(0, match.index + match[0].length) + injectContent + content.slice(match.index + match[0].length);
+            fs.writeFileSync(serverRouterPath, content);
+            console.log('✓ Rota injetada no ServerRouter.tsx');
+        } else {
+            console.log('⚠ Não foi possível encontrar a rota /files no ServerRouter.tsx para injetar o Modpacks');
+        }
+    }
+}
+
+// 2. Injetar na Navegacao via routes.ts (para aparecer no menu lateral)
 const routesTsPath = path.join(panelDir, 'resources/scripts/routers/routes.ts');
 if (fs.existsSync(routesTsPath)) {
     let content = fs.readFileSync(routesTsPath, 'utf8');
