@@ -529,6 +529,40 @@ const panelDir = process.argv[2];
   }
   fs.writeFileSync(arPath, c);
 })();
+
+// 4. Patch ServerElements.tsx (Navbar)
+(function patchServerElements() {
+  const sePath = path.join(panelDir, 'resources/scripts/routers/ServerElements.tsx');
+  if (!fs.existsSync(sePath)) return;
+  let c = fs.readFileSync(sePath, 'utf8');
+  c = c.replace(/<NavLink[^>]*\/modpacks[^>]*>[\s\S]*?<\/NavLink>\n?/g, '');
+  
+  if (!c.includes('/modpacks')) {
+    const pm = c.match(/<NavLink[^>]*\/plugins[^>]*>[\s\S]*?<\/NavLink>/);
+    if (pm) {
+      const ls = c.lastIndexOf('\n', pm.index) + 1;
+      const ind = (c.slice(ls, pm.index).match(/^(\s*)/) || ['',''])[1];
+      const inj = '\n' + ind + '<NavLink to={`${match.url}/modpacks`}>' +
+                  '\n' + ind + '    <FontAwesomeIcon icon={faBox} /> Modpacks' +
+                  '\n' + ind + '</NavLink>';
+      c = c.slice(0, pm.index + pm[0].length) + inj + c.slice(pm.index + pm[0].length);
+      
+      if (!c.includes('faBox')) {
+          const fm = c.match(/import\s+\{[^}]*\}\s+from\s+['"]@fortawesome\/free-solid-svg-icons['"];?/);
+          if (fm) {
+              c = c.slice(0, fm.index) + fm[0].replace('{', '{ faBox, ') + c.slice(fm.index + fm[0].length);
+          } else {
+              c = "import { faBox } from '@fortawesome/free-solid-svg-icons';\n" + c;
+          }
+      }
+      if (!c.includes('FontAwesomeIcon')) {
+          c = "import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';\n" + c;
+      }
+      console.log('\\u2713 Modpacks NavLink injetado no ServerElements.tsx');
+    }
+  }
+  fs.writeFileSync(sePath, c);
+})();
 JSEOF
     } > "$JS"
 
