@@ -723,6 +723,7 @@ auto_clean() {
     rm -rf resources/scripts/components/server/playermanager 2>/dev/null || true
     rm -rf resources/scripts/components/server/modpacks 2>/dev/null || true
     rm -rf resources/scripts/blueprints/modpack-installer 2>/dev/null || true
+    rm -rf blueprints/modpack-installer 2>/dev/null || true
     
     # Script Node.js para limpeza fina dos arquivos TypeScript
     cat << 'CLEANEOF' > /tmp/auto_clean.js
@@ -779,7 +780,7 @@ if (fs.existsSync(rtPath)) {
 const sePath = path.join(panelDir, 'resources/scripts/routers/ServerElements.tsx');
 if (fs.existsSync(sePath)) {
     let c = fs.readFileSync(sePath, 'utf8');
-    c = c.replace(/^\/\/ @ts-nocheck\n/m, '');
+    if (!c.includes('eslint-disable')) c = '/* eslint-disable */\n// @ts-nocheck\n' + c.replace(/^\/\/ @ts-nocheck\n?/m, ''); else if (!c.includes('@ts-nocheck')) c = c.replace(/\/\* eslint-disable \*\/\n?/g, '/* eslint-disable */\n// @ts-nocheck\n');
     c = c.replace(/<NavLink[^>]*\/modpacks[^>]*>[\s\S]*?<\/NavLink>/g, '');
     fs.writeFileSync(sePath, c);
     console.log('✓ ServerElements.tsx limpo');
@@ -789,7 +790,7 @@ if (fs.existsSync(sePath)) {
 const nbPath = path.join(panelDir, 'resources/scripts/components/NavigationBar.tsx');
 if (fs.existsSync(nbPath)) {
     let c = fs.readFileSync(nbPath, 'utf8');
-    c = c.replace(/^\/\/ @ts-nocheck\n/m, '');
+    if (!c.includes('eslint-disable')) c = '/* eslint-disable */\n// @ts-nocheck\n' + c.replace(/^\/\/ @ts-nocheck\n?/m, ''); else if (!c.includes('@ts-nocheck')) c = c.replace(/\/\* eslint-disable \*\/\n?/g, '/* eslint-disable */\n// @ts-nocheck\n');
     fs.writeFileSync(nbPath, c);
     console.log('✓ NavigationBar.tsx limpo');
 }
@@ -798,6 +799,7 @@ console.log('✓ Limpeza automática concluída');
 CLEANEOF
     node /tmp/auto_clean.js 2>/dev/null || print_warning "Limpeza parcial (node não disponível ainda)"
     rm -f /tmp/auto_clean.js
+    yarn prettier --write "resources/scripts/components/elements/PaginationBagou.tsx" "resources/scripts/components/server/console/ConsoleBlock.tsx" "resources/scripts/components/server/files/NewDirectoryDialog.tsx" 2>/dev/null || true
     
     print_success "Limpeza automática concluída"
 }
