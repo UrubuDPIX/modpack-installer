@@ -491,8 +491,7 @@ const panelDir = process.argv[2];
       const ls = c.lastIndexOf('\n', navMatch.index) + 1;
       const ind = (c.slice(ls, navMatch.index).match(/^(\s*)/) || ['',''])[1];
       const inj = '\n' + ind + '<NavLink to={`${match.url}/modpacks`}>' +
-                  '\n' + ind + '    <FontAwesomeIcon icon={faBox} />' +
-                  '\n' + ind + '    Modpacks' +
+                  '\n' + ind + '    <FontAwesomeIcon icon={faBox} /> Modpacks' +
                   '\n' + ind + '</NavLink>';
       c = c.slice(0, navMatch.index + navMatch[0].length) + inj + c.slice(navMatch.index + navMatch[0].length);
       console.log('\u2713 NavLink de Modpacks injetado no ServerRouter.tsx');
