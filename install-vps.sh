@@ -503,6 +503,11 @@ build_frontend() {
     
     cd "$PANEL_DIR"
     
+    # Remover blueprints do caminho do Webpack ANTES de compilar
+    # (O script PHP de instalacao joga uma copia la, mas usamos a nativa do components)
+    rm -rf "$PANEL_DIR/resources/scripts/blueprints/modpack-installer" 2>/dev/null || true
+
+    
     if [ "$HAS_NODE" = true ]; then
         print_info "Instalando dependências..."
         yarn install --frozen-lockfile 2>/dev/null || yarn install
