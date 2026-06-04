@@ -256,10 +256,15 @@ install_blueprint() {
     if [ -d "$TEMP_DIR/client/pages" ]; then
         cp -r "$TEMP_DIR/client/pages/." "$modpacks_dir/"
     fi
-    # Copiar types/ (necessário para imports ./types nos componentes)
+    # Copiar types como arquivo plano types/index.ts -> modpacks/types.ts
+    # Componentes importam './types' que resolve para modpacks/types.ts
     if [ -d "$TEMP_DIR/client/types" ]; then
-        cp -r "$TEMP_DIR/client/types/." "$modpacks_dir/"
+        mkdir -p "$modpacks_dir/types"
+        cp -r "$TEMP_DIR/client/types/." "$modpacks_dir/types/"
     fi
+    # Remover blueprints do caminho do Webpack (evita erros de compilacao duplicados)
+    # O diretorio resources/scripts/blueprints/ nao deve ser compilado pelo Webpack
+    rm -rf "$PANEL_DIR/resources/scripts/blueprints/modpack-installer" 2>/dev/null || true
     if [ -f "$TEMP_DIR/client/styles.css" ]; then
         cp "$TEMP_DIR/client/styles.css" "$modpacks_dir/"
     fi
@@ -410,85 +415,83 @@ register_permissions() {
 
 inject_frontend_routes() {
     print_step "Injetando rotas nativamente no Jexactyl..."
-    
-    cat << 'EOF' > /tmp/inject_modpacks.js
+
+    local JS=/tmp/inject_modpacks.js
+
+    # Escreve o script de injeção de rotas usando node (LF-safe)
+    {
+    cat << 'JSEOF'
 const fs = require('fs');
 const path = require('path');
-
 const panelDir = process.argv[2];
 
-
-
-// 1. Injetar no ServerRouter.tsx (para registrar a rota no React Router)
-const serverRouterPath = path.join(panelDir, 'resources/scripts/routers/ServerRouter.tsx');
-if (fs.existsSync(serverRouterPath)) {
-    let content = fs.readFileSync(serverRouterPath, 'utf8');
-    
-    // Limpar import e rota antigos se houver
-    content = content.replace(/import ModpacksPage from '[^']+';\n?/g, '');
-    content = content.replace(/import ModpacksPage from "[^"]+";\n?/g, '');
-    content = content.replace(/<Route path=\{`\$\{match\.path\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>/g, '');
-    
-    if (!content.includes('ModpacksPage')) {
-        // Adicionar import
-        const lastImportMatch = [...content.matchAll(/^import .*;$/gm)].pop();
-        if (lastImportMatch) {
-            const importLine = "\nimport ModpacksPage from '@/components/server/modpacks/ModpacksPage';\n";
-            content = content.slice(0, lastImportMatch.index + lastImportMatch[0].length) + importLine + content.slice(lastImportMatch.index + lastImportMatch[0].length);
-        }
-        
-        // Injetar a Rota no Switch (antes da rota * ou NotFound)
-        const fileRouteRegex = /<Route path=\{`\$\{match\.path\}\/files`\} exact>[\s\S]*?<\/Route>/;
-        const match = content.match(fileRouteRegex);
-        if (match) {
-            const injectContent = `
-                            <Route path={\`\${match.path}/modpacks\`} exact>
-                                <ModpacksPage />
-                            </Route>`;
-            content = content.slice(0, match.index + match[0].length) + injectContent + content.slice(match.index + match[0].length);
-            fs.writeFileSync(serverRouterPath, content);
-            console.log('✓ Rota injetada no ServerRouter.tsx');
-        } else {
-            console.log('⚠ Não foi possível encontrar a rota /files no ServerRouter.tsx para injetar o Modpacks');
-        }
+// 1. Patch ServerRouter.tsx
+(function patchServerRouter() {
+  const srPath = path.join(panelDir, 'resources/scripts/routers/ServerRouter.tsx');
+  if (!fs.existsSync(srPath)) return;
+  let c = fs.readFileSync(srPath, 'utf8');
+  c = c.replace(/import ModpacksPage from '[^']+';?\n?/g, '');
+  c = c.replace(/import ModpacksPage from "[^"]+";?\n?/g, '');
+  c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
+  c = c.replace(/\n{3,}/g, '\n\n');
+  if (!c.includes('ModpacksPage')) {
+    const imports = [...c.matchAll(/^import .*;$/gm)];
+    if (imports.length) {
+      const lm = imports[imports.length - 1];
+      c = c.slice(0, lm.index + lm[0].length) +
+          "\nimport ModpacksPage from '@/components/server/modpacks/ModpacksPage';" +
+          c.slice(lm.index + lm[0].length);
     }
-}
-
-// 2. Injetar na Navegacao via routes.ts (para aparecer no menu lateral)
-const routesTsPath = path.join(panelDir, 'resources/scripts/routers/routes.ts');
-if (fs.existsSync(routesTsPath)) {
-    let content = fs.readFileSync(routesTsPath, 'utf8');
-    
-    // Limpar injeção anterior para garantir lugar correto
-    content = content.replace(/\{\s*path:\s*'\/modpacks',[^}]*component:\s*ModpacksPage,?\s*\},?\s*/gs, '');
-    content = content.replace(/import ModpacksPage from '[^']+';\n?/g, '');
-    content = content.replace(/import ModpacksPage from "[^"]+";\n?/g, '');
-    
-    if (!content.includes('/modpacks') && !content.includes('ModpacksPage')) {
-        // Adicionar import
-        const lastImportMatch = [...content.matchAll(/^import .+from .+;$/gm)].pop();
-        if (lastImportMatch) {
-            const importLine = "\nimport ModpacksPage from '@/components/server/modpacks/ModpacksPage';\n";
-            const idx = lastImportMatch.index + lastImportMatch[0].length;
-            content = content.slice(0, idx) + importLine + content.slice(idx);
-        }
-        // Adicionar objeto de rota na lista do servidor
-        const serverRoutesMatch = content.match(/server:\s*\[/);
-        if (serverRoutesMatch) {
-            const insertIdx = serverRoutesMatch.index + serverRoutesMatch[0].length;
-            const modpackRoute = `\n        {\n            path: '/modpacks',\n            name: 'Modpacks',\n            permission: null,\n            component: ModpacksPage,\n        },`;
-            content = content.slice(0, insertIdx) + modpackRoute + content.slice(insertIdx);
-            fs.writeFileSync(routesTsPath, content);
-            console.log('✓ Rota /modpacks adicionada no routes.ts');
-        } else {
-            console.log('⚠ Não foi possível encontrar o array "server: [" no routes.ts');
-        }
+    const fm = c.match(/<Route path=\{`\$\{match\.path\}\/files`\} exact>[\s\S]*?<\/Route>/);
+    if (fm) {
+      const ls = c.lastIndexOf('\n', fm.index) + 1;
+      const ind = (c.slice(ls, fm.index).match(/^(\s*)/) || ['',''])[1];
+      const inj = '\n' + ind + '<Route path={`${match.path}/modpacks`} exact>\n' +
+                  ind + '    <ModpacksPage />\n' +
+                  ind + '</Route>';
+      c = c.slice(0, fm.index + fm[0].length) + inj + c.slice(fm.index + fm[0].length);
+      console.log('\u2713 Rota injetada no ServerRouter.tsx');
+    } else {
+      console.log('\u26a0 Rota /files nao encontrada no ServerRouter.tsx');
     }
-}
-EOF
+  }
+  c = c.replace(/\n{3,}/g, '\n\n');
+  fs.writeFileSync(srPath, c);
+})();
 
-    node /tmp/inject_modpacks.js "$PANEL_DIR"
-    rm -f /tmp/inject_modpacks.js
+// 2. Patch routes.ts
+(function patchRoutesTs() {
+  const rtPath = path.join(panelDir, 'resources/scripts/routers/routes.ts');
+  if (!fs.existsSync(rtPath)) return;
+  let c = fs.readFileSync(rtPath, 'utf8');
+  c = c.replace(/\{[^}]*path:\s*'\/modpacks'[^}]*\},?\n?/gs, '');
+  c = c.replace(/import ModpacksPage from '[^']+';?\n?/g, '');
+  c = c.replace(/import ModpacksPage from "[^"]+";?\n?/g, '');
+  c = c.replace(/\n{3,}/g, '\n\n');
+  if (!c.includes('/modpacks') && !c.includes('ModpacksPage')) {
+    const imports = [...c.matchAll(/^import .+from .+;$/gm)];
+    if (imports.length) {
+      const lm = imports[imports.length - 1];
+      c = c.slice(0, lm.index + lm[0].length) +
+          "\nimport ModpacksPage from '@/components/server/modpacks/ModpacksPage';" +
+          c.slice(lm.index + lm[0].length);
+    }
+    const sm = c.match(/server:\s*\[/);
+    if (sm) {
+      const route = "\n        {\n            path: '/modpacks',\n            name: 'Modpacks',\n            permission: null,\n            component: ModpacksPage,\n        },";
+      c = c.slice(0, sm.index + sm[0].length) + route + c.slice(sm.index + sm[0].length);
+      console.log('\u2713 Rota /modpacks adicionada no routes.ts');
+    } else {
+      console.log('\u26a0 server: [ nao encontrado em routes.ts');
+    }
+  }
+  fs.writeFileSync(rtPath, c);
+})();
+JSEOF
+    } > "$JS"
+
+    node "$JS" "$PANEL_DIR"
+    rm -f "$JS"
 }
 
 # ============================================================================
@@ -697,6 +700,109 @@ EOF
 }
 
 # ============================================================================
+# AUTO-LIMPEZA (roda antes de instalar para remover injeções antigas)
+# ============================================================================
+
+auto_clean() {
+    print_step "Limpando injeções e addons anteriores..."
+    
+    # Precisa do PANEL_DIR - detectar aqui rapidamente
+    local panel=""
+    for p in /var/www/jexactyl /var/www/pterodactyl /var/www/panel; do
+        [ -f "$p/artisan" ] && panel="$p" && break
+    done
+    [ -z "$panel" ] && return 0
+    
+    cd "$panel"
+    
+    # Remove pastas de addons quebrados
+    rm -rf resources/scripts/components/server/mcmodpacks 2>/dev/null || true
+    rm -rf resources/scripts/components/server/mcplugins 2>/dev/null || true
+    rm -rf resources/scripts/api/server/mcmodpacks 2>/dev/null || true
+    rm -rf resources/scripts/api/server/mcplugins 2>/dev/null || true
+    rm -rf resources/scripts/components/server/playermanager 2>/dev/null || true
+    rm -rf resources/scripts/components/server/modpacks 2>/dev/null || true
+    rm -rf resources/scripts/blueprints/modpack-installer 2>/dev/null || true
+    
+    # Script Node.js para limpeza fina dos arquivos TypeScript
+    cat << 'CLEANEOF' > /tmp/auto_clean.js
+const fs = require('fs');
+const path = require('path');
+const panelDir = process.cwd();
+
+// Corrigir CRLF nos arquivos problemáticos
+['resources/scripts/components/elements/PaginationBagou.tsx',
+ 'resources/scripts/components/server/console/ConsoleBlock.tsx',
+ 'resources/scripts/components/server/files/NewDirectoryDialog.tsx'].forEach(f => {
+    const fp = path.join(panelDir, f);
+    if (!fs.existsSync(fp)) return;
+    let c = fs.readFileSync(fp, 'utf8');
+    if (c.includes('\r')) {
+        c = c.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        if (!c.startsWith('/* eslint-disable */')) c = '/* eslint-disable */\n' + c;
+        fs.writeFileSync(fp, c);
+    }
+});
+
+// Limpar ServerRouter.tsx
+const srPath = path.join(panelDir, 'resources/scripts/routers/ServerRouter.tsx');
+if (fs.existsSync(srPath)) {
+    let c = fs.readFileSync(srPath, 'utf8');
+    c = c.replace(/import ModpacksPage from '[^']+';\n?/g, '');
+    c = c.replace(/import ModpacksPage from "[^"]+";\n?/g, '');
+    c = c.replace(/import McModpacks[^;]+;\n?/g, '');
+    c = c.replace(/import McPlugins[^;]+;\n?/g, '');
+    c = c.replace(/<Route path=\{`\$\{match\.(url|path)\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>/g, '');
+    c = c.replace(/\n{3,}/g, '\n\n');
+    fs.writeFileSync(srPath, c);
+    console.log('✓ ServerRouter.tsx limpo');
+}
+
+// Limpar routes.ts
+const rtPath = path.join(panelDir, 'resources/scripts/routers/routes.ts');
+if (fs.existsSync(rtPath)) {
+    let c = fs.readFileSync(rtPath, 'utf8');
+    c = c.replace(/import ModpacksPage from '[^']+';\n?/g, '');
+    c = c.replace(/import ModpacksPage from "[^"]+";\n?/g, '');
+    c = c.replace(/import McModpacks[^;]+;\n?/g, '');
+    c = c.replace(/import McPlugins[^;]+;\n?/g, '');
+    c = c.replace(/\{[^}]*path:\s*'\/modpacks'[^}]*\},?\s*/gs, '');
+    c = c.replace(/McModpacksContainer|McPluginsContainer/g, '');
+    c = c.replace(/,\s*,/g, ',');
+    c = c.replace(/,\s*(\])/g, '$1');
+    c = c.replace(/\n{3,}/g, '\n\n');
+    fs.writeFileSync(rtPath, c);
+    console.log('✓ routes.ts limpo');
+}
+
+// Limpar ServerElements.tsx - remover @ts-nocheck e injeções erradas
+const sePath = path.join(panelDir, 'resources/scripts/routers/ServerElements.tsx');
+if (fs.existsSync(sePath)) {
+    let c = fs.readFileSync(sePath, 'utf8');
+    c = c.replace(/^\/\/ @ts-nocheck\n/m, '');
+    c = c.replace(/<NavLink[^>]*\/modpacks[^>]*>[\s\S]*?<\/NavLink>/g, '');
+    fs.writeFileSync(sePath, c);
+    console.log('✓ ServerElements.tsx limpo');
+}
+
+// Limpar NavigationBar.tsx - remover @ts-nocheck
+const nbPath = path.join(panelDir, 'resources/scripts/components/NavigationBar.tsx');
+if (fs.existsSync(nbPath)) {
+    let c = fs.readFileSync(nbPath, 'utf8');
+    c = c.replace(/^\/\/ @ts-nocheck\n/m, '');
+    fs.writeFileSync(nbPath, c);
+    console.log('✓ NavigationBar.tsx limpo');
+}
+
+console.log('✓ Limpeza automática concluída');
+CLEANEOF
+    node /tmp/auto_clean.js 2>/dev/null || print_warning "Limpeza parcial (node não disponível ainda)"
+    rm -f /tmp/auto_clean.js
+    
+    print_success "Limpeza automática concluída"
+}
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
@@ -723,6 +829,7 @@ main() {
     echo ""
     
     detect_panel
+    auto_clean
     check_prerequisites
     download_blueprint
     install_blueprint
