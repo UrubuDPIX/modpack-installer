@@ -8,11 +8,15 @@ import {
   faExclamationTriangle,
   faSearch,
   faCog,
+  faInfoCircle,
+  faTimes,
+  faExternalLinkAlt,
 } from "@fortawesome/free-solid-svg-icons";
 // @ts-ignore
 import { ServerContext } from '@/state/server';
 
 interface ModpackItem {
+  id?: string | number;
   slug: string;
   title: string;
   description: string;
@@ -24,6 +28,9 @@ interface ModpackItem {
   game_versions: string[];
   loaders: string[];
   latest_version: any | null;
+  body?: string;
+  author?: string;
+  url?: string;
 }
 
 const CATEGORIES = [
@@ -91,6 +98,17 @@ export default function ModpacksContainer() {
   const [curseforgeKey, setCurseforgeKey] = useState("");
   const [showKeyInput, setShowKeyInput] = useState(false);
 
+  // Modais
+  const [detailsModpack, setDetailsModpack] = useState<ModpackItem | null>(null);
+  const [detailsVersions, setDetailsVersions] = useState<any[]>([]);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsTab, setDetailsTab] = useState<"description" | "versions">("description");
+
+  const [installModpackData, setInstallModpackData] = useState<{ modpack: ModpackItem; versionId: string; versionName: string } | null>(null);
+  const [installDeleteFiles, setInstallDeleteFiles] = useState(false);
+  const [installAcceptEula, setInstallAcceptEula] = useState(false);
+  const [installing, setInstalling] = useState(false);
+
   // Use ref to always have current provider in async callbacks
   const providerRef = useRef(provider);
   providerRef.current = provider;
@@ -147,6 +165,7 @@ export default function ModpacksContainer() {
         const loaders = allCats.filter((c: string) => loaderSet.has(c));
 
         return {
+          id: hit.project_id || hit.slug,
           slug: hit.slug || hit.project_id,
           title: hit.title,
           description: hit.description,
@@ -245,6 +264,7 @@ export default function ModpacksContainer() {
         }
 
         return {
+          id: String(mod.id),
           slug: mod.slug || String(mod.id),
           title: mod.name,
           description: mod.summary,
@@ -344,6 +364,96 @@ export default function ModpacksContainer() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     fetchModpacks();
+  };
+
+  // ── Modais: Detalhes e Instalação ─────────────────────────────────────
+
+  const fetchModpackVersions = async (modpack: ModpackItem) => {
+    setDetailsLoading(true);
+    try {
+      if (provider === "modrinth") {
+        const res = await fetch(`https://api.modrinth.com/v2/project/${modpack.slug}/version`);
+        if (res.ok) {
+          const versions = await res.json();
+          setDetailsVersions(versions || []);
+        }
+      } else if (provider === "curseforge" && modpack.id && curseforgeKey) {
+        const res = await fetch(`https://api.curseforge.com/v1/mods/${modpack.id}/files?pageSize=50`, {
+          headers: { "x-api-key": curseforgeKey },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDetailsVersions((data.data || []).map((f: any) => ({
+            id: String(f.id),
+            name: f.displayName,
+            version_number: f.fileName,
+            game_versions: (f.gameVersions || []).filter((v: string) => /^\d/.test(v)),
+            loaders: (f.gameVersions || []).filter((v: string) => LOADERS.includes(v.toLowerCase())),
+            date_published: f.fileDate,
+            downloads: f.downloadCount || 0,
+            version_type: f.releaseType === 1 ? "release" : f.releaseType === 2 ? "beta" : "alpha",
+            files: [{ url: f.downloadUrl, size: f.fileLength, filename: f.fileName }],
+          })));
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const openDetails = (modpack: ModpackItem) => {
+    setDetailsModpack(modpack);
+    setDetailsVersions([]);
+    setDetailsTab("description");
+    fetchModpackVersions(modpack);
+  };
+
+  const closeDetails = () => {
+    setDetailsModpack(null);
+    setDetailsVersions([]);
+  };
+
+  const openInstall = (modpack: ModpackItem, versionId: string, versionName: string) => {
+    setInstallModpackData({ modpack, versionId, versionName });
+    setInstallDeleteFiles(false);
+    setInstallAcceptEula(false);
+  };
+
+  const closeInstall = () => {
+    setInstallModpackData(null);
+    setInstalling(false);
+  };
+
+  const handleInstall = async () => {
+    if (!installModpackData || !id) return;
+    if (!installAcceptEula) {
+      alert("Você precisa aceitar a Minecraft EULA para instalar.");
+      return;
+    }
+    setInstalling(true);
+    try {
+      const response = await fetch(`/api/client/servers/${id}/modpack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modpack_slug: installModpackData.modpack.slug,
+          version_id: installModpackData.versionId,
+          provider,
+          delete_files: installDeleteFiles,
+        }),
+      });
+      if (!response.ok) throw new Error();
+      alert("Modpack agendado para instalação!");
+      fetchInstalledModpack();
+      closeInstall();
+      closeDetails();
+    } catch {
+      alert("Erro ao instalar modpack");
+    } finally {
+      setInstalling(false);
+    }
   };
 
   const installModpack = async (slug: string, versionId: string) => {
@@ -556,17 +666,173 @@ export default function ModpacksContainer() {
                   {(modpack.game_versions || []).slice(0, 1).map((v: string) => <span key={v} className="text-[10px] text-gray-500">MC {v}</span>)}
                   {(modpack.loaders || []).slice(0, 1).map((l: string) => <span key={l} className="text-[10px] text-gray-500 capitalize">{l}</span>)}
                 </div>
-                <button
-                  onClick={() => modpack.latest_version && installModpack(modpack.slug, modpack.latest_version.id)}
-                  disabled={!modpack.latest_version || !id}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
-                >
-                  <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
-                  Instalar
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openDetails(modpack)}
+                    className="bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                  >
+                    <FontAwesomeIcon icon={faInfoCircle} className="text-[10px]" />
+                    Details
+                  </button>
+                  <button
+                    onClick={() => modpack.latest_version && openInstall(modpack, modpack.latest_version.id, modpack.latest_version.name || modpack.latest_version.version_number)}
+                    disabled={!modpack.latest_version || !id}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                  >
+                    <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
+                    Install
+                  </button>
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Modal: Detalhes do Modpack ────────────────────────────────────── */}
+      {detailsModpack && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-8 px-4 bg-black/70 backdrop-blur-sm" onClick={closeDetails}>
+          <div className="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-3xl max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e: any) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-start gap-4 p-5 border-b border-gray-700">
+              <img src={detailsModpack.icon_url || "/default-modpack.png"} alt={detailsModpack.title} className="w-16 h-16 rounded-lg object-cover border border-gray-600 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="text-lg font-bold text-white">{detailsModpack.title}</h2>
+                  <button onClick={closeDetails} className="text-gray-400 hover:text-white p-1">
+                    <FontAwesomeIcon icon={faTimes} />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-400 mt-1">{formatDownloads(detailsModpack.downloads)} downloads</p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {(detailsModpack.categories || []).map((cat: string) => (
+                    <span key={cat} className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] uppercase tracking-wide">{cat}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-gray-700">
+              <button onClick={() => setDetailsTab("description")} className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${detailsTab === "description" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-300"}`}>
+                Description
+              </button>
+              <button onClick={() => setDetailsTab("versions")} className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${detailsTab === "versions" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-300"}`}>
+                Versions ({detailsVersions.length})
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-5">
+              {detailsTab === "description" ? (
+                <div>
+                  <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{detailsModpack.description}</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="bg-gray-700/30 rounded-lg p-3">
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wide">Loaders</p>
+                      <p className="text-sm text-gray-300 mt-0.5">{(detailsModpack.loaders || []).join(", ") || "N/A"}</p>
+                    </div>
+                    <div className="bg-gray-700/30 rounded-lg p-3">
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wide">Game Versions</p>
+                      <p className="text-sm text-gray-300 mt-0.5">{(detailsModpack.game_versions || []).slice(0, 5).join(", ") || "N/A"}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {detailsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                    </div>
+                  ) : detailsVersions.length === 0 ? (
+                    <p className="text-gray-400 text-center py-8">Nenhuma versão encontrada</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {detailsVersions.map((v: any) => (
+                        <div key={v.id} className="flex items-center justify-between bg-gray-700/30 rounded-lg p-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-white font-medium truncate">{v.name || v.version_number}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5">
+                              {(v.game_versions || []).slice(0, 3).join(", ")} · {(v.loaders || []).join(", ")}
+                              {v.version_type && ` · ${v.version_type}`}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => openInstall(detailsModpack, v.id, v.name || v.version_number)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ml-2 flex-shrink-0"
+                          >
+                            <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
+                            Install
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Instalação ───────────────────────────────────────────── */}
+      {installModpackData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/70 backdrop-blur-sm" onClick={closeInstall}>
+          <div className="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-md shadow-2xl" onClick={(e: any) => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-700">
+              <div className="flex items-start gap-3">
+                <img src={installModpackData.modpack.icon_url || "/default-modpack.png"} alt={installModpackData.modpack.title} className="w-12 h-12 rounded-lg object-cover border border-gray-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-bold text-white">{installModpackData.modpack.title}</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">{installModpackData.versionName}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Checkbox: Delete server files */}
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={installDeleteFiles}
+                  onChange={(e) => setInstallDeleteFiles(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <p className="text-sm text-white font-medium">Delete Server Files</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Remove existing files from your server before installing the modpack. This cannot be undone.</p>
+                </div>
+              </label>
+
+              {/* Checkbox: Accept EULA */}
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={installAcceptEula}
+                  onChange={(e) => setInstallAcceptEula(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <p className="text-sm text-white font-medium">Accept Minecraft EULA</p>
+                  <p className="text-xs text-gray-400 mt-0.5">By installing this modpack, you agree to the Minecraft EULA.</p>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-700">
+              <button onClick={closeInstall} className="text-gray-400 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleInstall}
+                disabled={!installAcceptEula || installing}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+              >
+                <FontAwesomeIcon icon={installing ? faBox : faDownload} className="text-xs" />
+                {installing ? "Installing..." : "Install"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
