@@ -239,18 +239,27 @@ install_blueprint() {
     print_info "Copiando arquivos..."
     cp "$TEMP_DIR/blueprint.json" "$blueprint_dir/"
     
-    print_step "Integrando frontend..."
-    local res_scripts_dir="$PANEL_DIR/resources/scripts/blueprints/modpack-installer"
-    mkdir -p "$res_scripts_dir"
-    
+    # Copiar arquivos do blueprint
     if [ -d "$TEMP_DIR/client" ]; then
         cp -r "$TEMP_DIR/client" "$blueprint_dir/"
-        # Copiar também para o local onde o Webpack compila (resources/scripts/blueprints)
-        cp -r "$TEMP_DIR/client" "$res_scripts_dir/"
-        print_info "Frontend blueprint copiado para: $res_scripts_dir/client/"
-        print_info "Para compilar: yarn run build:production"
-        print_success "Arquivos do cliente copiados"
     fi
+    
+    print_step "Integrando frontend..."
+    # Copiar componentes para dentro do resources/scripts onde o Webpack pode encontrar
+    local modpacks_dir="$PANEL_DIR/resources/scripts/components/server/modpacks"
+    rm -rf "$modpacks_dir"
+    mkdir -p "$modpacks_dir"
+    
+    if [ -d "$TEMP_DIR/client/components" ]; then
+        cp -r "$TEMP_DIR/client/components/". "$modpacks_dir/"
+    fi
+    if [ -d "$TEMP_DIR/client/pages" ]; then
+        cp -r "$TEMP_DIR/client/pages/". "$modpacks_dir/"
+    fi
+    if [ -f "$TEMP_DIR/client/styles.css" ]; then
+        cp "$TEMP_DIR/client/styles.css" "$modpacks_dir/"
+    fi
+    print_success "Componentes copiados para: $modpacks_dir"
     
     [ -d "$TEMP_DIR/server" ] && cp -r "$TEMP_DIR/server" "$blueprint_dir/"
     [ -d "$TEMP_DIR/prisma" ] && cp -r "$TEMP_DIR/prisma" "$blueprint_dir/"
@@ -420,7 +429,7 @@ if (fs.existsSync(serverRouterPath)) {
         // Adicionar import
         const lastImportMatch = [...content.matchAll(/^import .*;$/gm)].pop();
         if (lastImportMatch) {
-            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/client/pages/ModpacksPage';\n";
+            const importLine = "\nimport ModpacksPage from '@/components/server/modpacks/ModpacksPage';\n";
             content = content.slice(0, lastImportMatch.index + lastImportMatch[0].length) + importLine + content.slice(lastImportMatch.index + lastImportMatch[0].length);
         }
         
@@ -455,7 +464,7 @@ if (fs.existsSync(routesTsPath)) {
         // Adicionar import
         const lastImportMatch = [...content.matchAll(/^import .+from .+;$/gm)].pop();
         if (lastImportMatch) {
-            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/client/pages/ModpacksPage';\n";
+            const importLine = "\nimport ModpacksPage from '@/components/server/modpacks/ModpacksPage';\n";
             const idx = lastImportMatch.index + lastImportMatch[0].length;
             content = content.slice(0, idx) + importLine + content.slice(idx);
         }

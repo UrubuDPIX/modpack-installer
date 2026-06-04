@@ -9,6 +9,8 @@ import {
   faSearch,
   faCog,
 } from "@fortawesome/free-solid-svg-icons";
+// @ts-ignore
+import { ServerContext } from '@/state/server';
 
 interface ModrinthProject {
   slug: string;
@@ -56,12 +58,10 @@ const MINECRAFT_VERSIONS = [
   "1.21.4","1.21.1","1.20.6","1.20.4","1.20.1","1.19.4","1.19.2","1.18.2",
 ];
 
-interface ModpacksContainerProps {
-  serverId: string;
-}
+export default function ModpacksContainer() {
+  // Pega o UUID do servidor via ServerContext (padrão Jexactyl)
+  const id = ServerContext.useStoreState((state: any) => state.server.data?.uuid);
 
-export default function ModpacksContainer({ serverId }: ModpacksContainerProps) {
-  const id = serverId;
   const [provider, setProvider] = useState<"modrinth" | "curseforge">("modrinth");
   const [modpacks, setModpacks] = useState<ModrinthProject[]>([]);
   const [loading, setLoading] = useState(true);
