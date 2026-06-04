@@ -446,6 +446,31 @@ const panelDir = process.argv[2];
           c.slice(lm.index + lm[0].length);
     }
 
+    // Adicionar imports do FontAwesome se nao existirem
+    if (!c.includes("@fortawesome/react-fontawesome")) {
+      const firstImport = c.match(/^import .*;$/m);
+      if (firstImport) {
+        c = c.slice(0, firstImport.index) +
+            "import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';\n" +
+            c.slice(firstImport.index);
+      }
+    }
+    const faIconsMatch = c.match(/import\s+\{([^}]*)\}\s+from\s+['"]@fortawesome\/free-solid-svg-icons['"];?/);
+    if (faIconsMatch) {
+      if (!faIconsMatch[1].includes('faBox')) {
+        c = c.slice(0, faIconsMatch.index) +
+            faIconsMatch[0].replace(faIconsMatch[1], faIconsMatch[1].trim() + ', faBox') +
+            c.slice(faIconsMatch.index + faIconsMatch[0].length);
+      }
+    } else {
+      const firstImport = c.match(/^import .*;$/m);
+      if (firstImport) {
+        c = c.slice(0, firstImport.index) +
+            "import { faBox } from '@fortawesome/free-solid-svg-icons';\n" +
+            c.slice(firstImport.index);
+      }
+    }
+
     // Injetar Route
     const fm = c.match(/<Route path=\{`\$\{match\.path\}\/files`\} exact>[\s\S]*?<\/Route>/);
     if (fm) {
@@ -466,6 +491,7 @@ const panelDir = process.argv[2];
       const ls = c.lastIndexOf('\n', navMatch.index) + 1;
       const ind = (c.slice(ls, navMatch.index).match(/^(\s*)/) || ['',''])[1];
       const inj = '\n' + ind + '<NavLink to={`${match.url}/modpacks`}>' +
+                  '\n' + ind + '    <FontAwesomeIcon icon={faBox} />' +
                   '\n' + ind + '    Modpacks' +
                   '\n' + ind + '</NavLink>';
       c = c.slice(0, navMatch.index + navMatch[0].length) + inj + c.slice(navMatch.index + navMatch[0].length);

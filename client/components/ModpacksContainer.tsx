@@ -228,7 +228,10 @@ export default function ModpacksContainer() {
       const response = await fetch(url, {
         headers: { "x-api-key": curseforgeKey },
       });
-      if (!response.ok) throw new Error("Erro ao buscar modpacks do CurseForge");
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}: ${text.slice(0, 100)}`);
+      }
       const data = await response.json();
 
       let hits: ModpackItem[] = (data.data || []).map((mod: any) => {
@@ -297,9 +300,13 @@ export default function ModpacksContainer() {
       if (providerRef.current === "curseforge") {
         setModpacks(hits);
       }
-    } catch (err) {
+    } catch (err: any) {
       if (providerRef.current === "curseforge") {
-        setError("Erro ao carregar CurseForge. Verifique sua chave de API.");
+        const status = err?.message?.includes("403") ? " (Chave inválida/expirada)" :
+                       err?.message?.includes("429") ? " (Muitas requisições - aguarde)" :
+                       err?.message?.includes("5") ? " (Erro no servidor CurseForge)" : "";
+        setError(`Erro ao carregar CurseForge${status}. Verifique sua chave de API.`);
+        console.error("[CurseForge Error]", err);
       }
     } finally {
       if (providerRef.current === "curseforge") {
