@@ -37,11 +37,18 @@ $blueprint = json_decode(file_get_contents($blueprintPath), true);
 echo "Blueprint: {$blueprint['name']} v{$blueprint['version']}\n";
 echo "Target: {$blueprint['target']}\n\n";
 
+// Detecta diretorio do blueprint
+$blueprintDir = $panelDir . '/blueprints/modpack-installer';
+if (!is_dir($blueprintDir)) {
+    echo "ERRO: Diretorio do blueprint nao encontrado em $blueprintDir!\n";
+    exit(1);
+}
+
 // 2. Verificar estrutura
 echo "Verificando estrutura...\n";
 $required = [
-    $panelDir . '/client/index.tsx' => 'Client entrypoint',
-    $panelDir . '/server/index.ts' => 'Server entrypoint',
+    $blueprintDir . '/client/index.tsx' => 'Client entrypoint',
+    $blueprintDir . '/server/index.ts' => 'Server entrypoint',
 ];
 
 foreach ($required as $path => $desc) {
@@ -143,7 +150,7 @@ try {
 
 // 5. Copiar assets para o frontend (integrar ao webpack/build)
 echo "\nIntegrando frontend...\n";
-echo "  ℹ Frontend blueprint disponivel em: {$panelDir}/client/\n";
+echo "  ℹ Frontend blueprint disponivel em: {$blueprintDir}/client/\n";
 echo "  ℹ Para compilar: yarn run build:production\n";
 
 // Criar diretorio para o blueprint no resources
@@ -153,8 +160,8 @@ if (!is_dir($blueprintResourceDir)) {
 }
 
 // Copiar arquivos do cliente
-if (is_dir($panelDir . '/client')) {
-    shell_exec("cp -r " . $panelDir . "/client/* $blueprintResourceDir/ 2>/dev/null");
+if (is_dir($blueprintDir . '/client')) {
+    shell_exec("cp -r " . $blueprintDir . "/client/* $blueprintResourceDir/ 2>/dev/null");
     echo "  ✓ Arquivos do cliente copiados\n";
 }
 

@@ -103,6 +103,15 @@ check_prerequisites() {
         exit 1
     fi
     
+    # Verifica e instala php-xml ( necessario para Laravel/DOMDocument )
+    if ! php -m | grep -q "simplexml"; then
+        print_warning "Extensao php-xml nao encontrada. Instalando..."
+        apt-get update -qq && apt-get install -y -qq php-xml php-dom 2>/dev/null || {
+            print_warning "Nao foi possivel instalar php-xml automaticamente"
+            print_info "Execute manualmente: apt-get install php-xml php-dom"
+        }
+    fi
+    
     # Verifica Composer
     if command -v composer &> /dev/null; then
         print_success "Composer encontrado"
@@ -250,6 +259,11 @@ setup_database() {
     
     cd "$PANEL_DIR"
     
+    # Copia blueprint.json temporariamente para o diretorio do painel
+    if [ -f "$PANEL_DIR/blueprints/modpack-installer/blueprint.json" ]; then
+        cp "$PANEL_DIR/blueprints/modpack-installer/blueprint.json" "$PANEL_DIR/blueprint.json"
+    fi
+    
     # Executa script PHP de instalação
     if [ -f "$PANEL_DIR/install-blueprint-panel.php" ]; then
         print_info "Executando script de instalação..."
@@ -257,6 +271,8 @@ setup_database() {
             print_warning "Script PHP retornou erro, tentando método alternativo..."
             setup_database_manual
         }
+        # Remove blueprint.json temporario
+        rm -f "$PANEL_DIR/blueprint.json"
     else
         setup_database_manual
     fi
@@ -470,13 +486,16 @@ verify_installation() {
     
     local all_ok=true
     
-    # Verifica tabelas
-    for table in modpacks modpack_versions server_modpacks; do
-        if sudo -u www-data php -r "
+    # Verifica tabelas usando SQL direto (evita problemas com Laravel/DOMDocument)
+    local db_name=$(sudo -u www-data php -r "
 require '$PANEL_DIR/vendor/autoload.php';
 \$app = require_once '$PANEL_DIR/bootstrap/app.php';
-\$app->make('db')->getSchemaBuilder()->hasTable('$table') ? exit(0) : exit(1);
-" 2>/dev/null; then
+echo \$app->make('db')->getDatabaseName();
+" 2>/dev/null || echo "panel")
+    
+    for table in modpacks modpack_versions server_modpacks modpack_settings; do
+        if mysql -e "SELECT 1 FROM \`$table\` LIMIT 1" "$db_name" 2>/dev/null || \
+           sudo mysql -e "SELECT 1 FROM \`$table\` LIMIT 1" "$db_name" 2>/dev/null; then
             print_success "Tabela '$table' OK"
         else
             print_warning "Tabela '$table' não encontrada"
