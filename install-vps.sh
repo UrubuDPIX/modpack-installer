@@ -392,35 +392,7 @@ const path = require('path');
 
 const panelDir = process.argv[2];
 
-// 1. Injetar no ServerRouter.tsx
-const serverRouterPath = path.join(panelDir, 'resources/scripts/routers/ServerRouter.tsx');
-if (fs.existsSync(serverRouterPath)) {
-    let content = fs.readFileSync(serverRouterPath, 'utf8');
-    
-    const importStatement = "import ModpacksPage from '@/blueprints/modpack-installer/pages/ModpacksPage';\n";
-    if (!content.includes('ModpacksPage')) {
-        // Encontrar os imports
-        const lastImportMatch = [...content.matchAll(/^import .*;$/gm)].pop();
-        if (lastImportMatch) {
-            content = content.slice(0, lastImportMatch.index + lastImportMatch[0].length) + '\n' + importStatement + content.slice(lastImportMatch.index + lastImportMatch[0].length);
-        } else {
-            content = importStatement + content;
-        }
-        
-        // Injetar a Rota
-        const fileRouteRegex = /<Route path=\{`\$\{match\.path\}\/files`\} exact>[\s\S]*?<\/Route>/;
-        const match = content.match(fileRouteRegex);
-        if (match) {
-            const injectContent = `
-                <Route path={\`\${match.path}/modpacks\`} exact>
-                    <ModpacksPage />
-                </Route>`;
-            content = content.slice(0, match.index + match[0].length) + injectContent + content.slice(match.index + match[0].length);
-            fs.writeFileSync(serverRouterPath, content);
-            console.log("Rota injetada em ServerRouter.tsx");
-        }
-    }
-}
+
 
 // 1. Injetar no ServerRouter.tsx (para registrar a rota no React Router)
 const serverRouterPath = path.join(panelDir, 'resources/scripts/routers/ServerRouter.tsx');
