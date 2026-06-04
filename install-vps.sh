@@ -380,6 +380,103 @@ register_permissions() {
 }
 
 # ============================================================================
+# INJEÇÃO NATIVA NO FRONTEND
+# ============================================================================
+
+inject_frontend_routes() {
+    print_step "Injetando rotas nativamente no Jexactyl..."
+    
+    cat << 'EOF' > /tmp/inject_modpacks.js
+const fs = require('fs');
+const path = require('path');
+
+const panelDir = process.argv[2];
+
+// 1. Injetar no ServerRouter.tsx
+const serverRouterPath = path.join(panelDir, 'resources/scripts/routers/ServerRouter.tsx');
+if (fs.existsSync(serverRouterPath)) {
+    let content = fs.readFileSync(serverRouterPath, 'utf8');
+    
+    const importStatement = "import ModpacksPage from '@/blueprints/modpack-installer/client/pages/ModpacksPage';\n";
+    if (!content.includes('ModpacksPage')) {
+        // Encontrar os imports
+        const lastImportMatch = [...content.matchAll(/^import .*;$/gm)].pop();
+        if (lastImportMatch) {
+            content = content.slice(0, lastImportMatch.index + lastImportMatch[0].length) + '\n' + importStatement + content.slice(lastImportMatch.index + lastImportMatch[0].length);
+        } else {
+            content = importStatement + content;
+        }
+        
+        // Injetar a Rota
+        const fileRouteRegex = /<Route path=\{`\$\{match\.path\}\/files`\} exact>[\s\S]*?<\/Route>/;
+        const match = content.match(fileRouteRegex);
+        if (match) {
+            const injectContent = `
+                <Route path={\`\${match.path}/modpacks\`} exact>
+                    <ModpacksPage />
+                </Route>`;
+            content = content.slice(0, match.index + match[0].length) + injectContent + content.slice(match.index + match[0].length);
+            fs.writeFileSync(serverRouterPath, content);
+            console.log("Rota injetada em ServerRouter.tsx");
+        }
+    }
+}
+
+// 2. Injetar na Navegacao (ServerElements ou NavigationBar)
+const navPaths = [
+    path.join(panelDir, 'resources/scripts/routers/ServerElements.tsx'),
+    path.join(panelDir, 'resources/scripts/components/server/ServerDetailsBlock.tsx'),
+    path.join(panelDir, 'resources/scripts/components/NavigationBar.tsx')
+];
+
+for (const nav of navPaths) {
+    if (fs.existsSync(nav)) {
+        let content = fs.readFileSync(nav, 'utf8');
+        if (!content.includes('/modpacks') && content.includes('/files')) {
+            const faDownload = "import { faDownload } from '@fortawesome/free-solid-svg-icons';\n";
+            if (!content.includes('faDownload')) {
+                const faMatch = content.match(/import \{.*?\} from '@fortawesome\/free-solid-svg-icons';/s);
+                if (faMatch) {
+                    content = content.replace(faMatch[0], faMatch[0].replace('}', ', faDownload }'));
+                } else {
+                    content = faDownload + content;
+                }
+            }
+            
+            // Procura o link de Files
+            const fileLinkMatch = content.match(/<NavLink to=\{`\$\{match\.url\}\/(files|users)`\}.*?<\/NavLink>/s);
+            if (fileLinkMatch) {
+                let navLink = `
+                    <NavLink to={\`\${match.url}/modpacks\`}>
+                        <FontAwesomeIcon icon={faDownload} /> Modpacks
+                    </NavLink>`;
+                
+                // Tratar componente <Can> se existir em volta do original
+                const blockBefore = content.slice(0, fileLinkMatch.index);
+                if (blockBefore.endsWith('<Can action={\\'file.*\\'}>\n') || blockBefore.endsWith('<Can action={"file.*"}>\n')) {
+                    // Pterodactyl antigo com Can
+                    navLink = `
+                <Can action={'modpacks.view'}>
+                    <NavLink to={\`\${match.url}/modpacks\`}>
+                        <FontAwesomeIcon icon={faDownload} /> Modpacks
+                    </NavLink>
+                </Can>`;
+                }
+                
+                content = content.slice(0, fileLinkMatch.index + fileLinkMatch[0].length) + navLink + content.slice(fileLinkMatch.index + fileLinkMatch[0].length);
+                fs.writeFileSync(nav, content);
+                console.log("Navegacao injetada em " + path.basename(nav));
+            }
+        }
+    }
+}
+EOF
+
+    node /tmp/inject_modpacks.js "$PANEL_DIR"
+    rm -f /tmp/inject_modpacks.js
+}
+
+# ============================================================================
 # BUILD DO FRONTEND
 # ============================================================================
 
@@ -616,6 +713,7 @@ main() {
     install_blueprint
     setup_database
     register_permissions
+    inject_frontend_routes
     build_frontend
     fix_permissions
     restart_services

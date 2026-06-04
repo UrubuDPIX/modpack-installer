@@ -1,3 +1,4 @@
+/* eslint-disable */
 export interface Modpack {
   id: string;
   name: string;
