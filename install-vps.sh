@@ -487,6 +487,48 @@ const panelDir = process.argv[2];
   }
   fs.writeFileSync(rtPath, c);
 })();
+
+// 3. Patch AdminRouter.tsx
+(function patchAdminRouter() {
+  const arPath = path.join(panelDir, 'resources/scripts/routers/AdminRouter.tsx');
+  if (!fs.existsSync(arPath)) return;
+  let c = fs.readFileSync(arPath, 'utf8');
+  c = c.replace(/import ModpackSettingsPage from '[^']+';?\n?/g, '');
+  c = c.replace(/import ModpackSettingsPage from "[^"]+";?\n?/g, '');
+  c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpack_settings`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
+  c = c.replace(/\n{3,}/g, '\n\n');
+  if (!c.includes('ModpackSettingsPage')) {
+    const imports = [...c.matchAll(/^import .*;$/gm)];
+    if (imports.length) {
+      const lm = imports[imports.length - 1];
+      c = c.slice(0, lm.index + lm[0].length) +
+          "\nimport ModpackSettingsPage from '@/components/server/modpacks/ModpackSettingsPage';" +
+          c.slice(lm.index + lm[0].length);
+    }
+    const fm = c.match(/<Route path=\{`\$\{match\.path\}\/mounts`\} exact>[\s\S]*?<\/Route>/);
+    if (fm) {
+      const ls = c.lastIndexOf('\n', fm.index) + 1;
+      const ind = (c.slice(ls, fm.index).match(/^(\s*)/) || ['',''])[1];
+      const inj = '<Route path={`${match.path}/modpack_settings`} exact>\n' +
+                  ind + '    <ModpackSettingsPage />\n' +
+                  ind + '</Route>\n' + ind;
+      c = c.slice(0, fm.index) + inj + c.slice(fm.index);
+      console.log('\u2713 Rota injetada no AdminRouter.tsx');
+    } else {
+      const fallbackMatch = c.match(/<Route path=\{(?:'\*'|"\*")\}.*?>[\s\S]*?<\/Route>/);
+      if (fallbackMatch) {
+          const ls = c.lastIndexOf('\n', fallbackMatch.index) + 1;
+          const ind = (c.slice(ls, fallbackMatch.index).match(/^(\s*)/) || ['',''])[1];
+          const inj = '<Route path={`${match.path}/modpack_settings`} exact>\n' +
+                      ind + '    <ModpackSettingsPage />\n' +
+                      ind + '</Route>\n' + ind;
+          c = c.slice(0, fallbackMatch.index) + inj + c.slice(fallbackMatch.index);
+          console.log('\u2713 Rota injetada no AdminRouter.tsx (antes do fallback)');
+      }
+    }
+  }
+  fs.writeFileSync(arPath, c);
+})();
 JSEOF
     } > "$JS"
 
@@ -762,6 +804,18 @@ if (fs.existsSync(srPath)) {
     c = c.replace(/\n{3,}/g, '\n\n');
     fs.writeFileSync(srPath, c);
     console.log('✓ ServerRouter.tsx limpo');
+}
+
+// Limpar AdminRouter.tsx
+const arPath = path.join(panelDir, 'resources/scripts/routers/AdminRouter.tsx');
+if (fs.existsSync(arPath)) {
+    let c = fs.readFileSync(arPath, 'utf8');
+    c = c.replace(/import ModpackSettingsPage from '[^']+';\n?/g, '');
+    c = c.replace(/import ModpackSettingsPage from "[^"]+";\n?/g, '');
+    c = c.replace(/<Route path=\{`\$\{match\.(url|path)\}\/modpack_settings`\}[^>]*>[\s\S]*?<\/Route>/g, '');
+    c = c.replace(/\n{3,}/g, '\n\n');
+    fs.writeFileSync(arPath, c);
+    console.log('\u2713 AdminRouter.tsx limpo');
 }
 
 // Limpar routes.ts

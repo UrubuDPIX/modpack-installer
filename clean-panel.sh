@@ -69,6 +69,17 @@ crlf.forEach(file => {
     fs.writeFileSync(p, c);
     console.log('ServerRouter.tsx limpo.');
 })();
+(function cleanAdminRouter() {
+    const p = path.join(panelDir, 'resources/scripts/routers/AdminRouter.tsx');
+    if (!fs.existsSync(p)) return;
+    let c = fs.readFileSync(p, 'utf8');
+    c = c.replace(/import ModpackSettingsPage from '[^']+';?\n?/g, '');
+    c = c.replace(/import ModpackSettingsPage from "[^"]+";?\n?/g, '');
+    c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpack_settings`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
+    c = c.replace(/\n{3,}/g, '\n\n');
+    fs.writeFileSync(p, c);
+    console.log('AdminRouter.tsx limpo.');
+})();
 (function cleanRoutesTs() {
     const p = path.join(panelDir, 'resources/scripts/routers/routes.ts');
     if (!fs.existsSync(p)) return;
