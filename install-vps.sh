@@ -453,7 +453,7 @@ for (const nav of navPaths) {
                 
                 // Tratar componente <Can> se existir em volta do original
                 const blockBefore = content.slice(0, fileLinkMatch.index);
-                if (blockBefore.endsWith('<Can action={\\'file.*\\'}>\n') || blockBefore.endsWith('<Can action={"file.*"}>\n')) {
+                if (blockBefore.endsWith('<Can action={\'file.*\'}>\n') || blockBefore.endsWith('<Can action={"file.*"}>\n')) {
                     // Pterodactyl antigo com Can
                     navLink = `
                 <Can action={'modpacks.view'}>
