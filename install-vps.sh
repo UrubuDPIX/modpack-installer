@@ -426,6 +426,12 @@ if (fs.existsSync(serverRouterPath)) {
 const routesTsPath = path.join(panelDir, 'resources/scripts/routers/routes.ts');
 if (fs.existsSync(routesTsPath)) {
     let content = fs.readFileSync(routesTsPath, 'utf8');
+    
+    // Limpar injeção anterior para garantir lugar correto
+    content = content.replace(/\{\s*path:\s*'\/modpacks',[^}]*component:\s*ModpacksPage,?\s*\},?\s*/gs, '');
+    content = content.replace(/import ModpacksPage from '[^']+';\n?/g, '');
+    content = content.replace(/import ModpacksPage from "[^"]+";\n?/g, '');
+    
     if (!content.includes('/modpacks') && !content.includes('ModpacksPage')) {
         // Adicionar import
         const lastImportMatch = [...content.matchAll(/^import .+from .+;$/gm)].pop();
@@ -435,13 +441,15 @@ if (fs.existsSync(routesTsPath)) {
             content = content.slice(0, idx) + importLine + content.slice(idx);
         }
         // Adicionar objeto de rota na lista do servidor
-        const serverRoutesMatch = content.match(/const ServerRoutes\s*=\s*\[/);
+        const serverRoutesMatch = content.match(/server:\s*\[/);
         if (serverRoutesMatch) {
             const insertIdx = serverRoutesMatch.index + serverRoutesMatch[0].length;
-            const modpackRoute = `\n    {\n        path: '/modpacks',\n        name: 'Modpacks',\n        permission: null,\n        component: ModpacksPage,\n        exact: true,\n    },`;
+            const modpackRoute = `\n        {\n            path: '/modpacks',\n            name: 'Modpacks',\n            permission: null,\n            component: ModpacksPage,\n        },`;
             content = content.slice(0, insertIdx) + modpackRoute + content.slice(insertIdx);
             fs.writeFileSync(routesTsPath, content);
             console.log('✓ Rota /modpacks adicionada no routes.ts');
+        } else {
+            console.log('⚠ Não foi possível encontrar o array "server: [" no routes.ts');
         }
     }
 }

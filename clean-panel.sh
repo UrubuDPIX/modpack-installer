@@ -97,6 +97,12 @@ if (fs.existsSync(routesTsPath)) {
     content = content.replace(/\{\s*path:[^}]*component:\s*McPluginsContainer[^}]*\},?\s*/gs, '');
     content = content.replace(/McModpacksContainer/g, '');
     content = content.replace(/McPluginsContainer/g, '');
+    
+    // Remove também a rota de Modpacks injetada previamente em lugar errado
+    content = content.replace(/\{\s*path:\s*'\/modpacks',[^}]*component:\s*ModpacksPage,?\s*\},?\s*/gs, '');
+    content = content.replace(/import ModpacksPage from '[^']+';\n?/g, '');
+    content = content.replace(/import ModpacksPage from "[^"]+";\n?/g, '');
+
     content = content.replace(/,\s*,/g, ',');
     content = content.replace(/,\s*\]/g, '\n]');
     fs.writeFileSync(routesTsPath, content);
@@ -127,16 +133,15 @@ if (fs.existsSync(routesTsPath)) {
             content = content.slice(0, idx) + importLine + content.slice(idx);
         }
         // Adicionar objeto de rota na lista do servidor
-        const serverRoutesMatch = content.match(/const ServerRoutes\s*=\s*\[/);
+        const serverRoutesMatch = content.match(/server:\s*\[/);
         if (serverRoutesMatch) {
             const insertIdx = serverRoutesMatch.index + serverRoutesMatch[0].length;
-            const modpackRoute = `\n    {\n        path: '/modpacks',\n        name: 'Modpacks',\n        permission: null,\n        component: ModpacksPage,\n        exact: true,\n    },`;
+            const modpackRoute = `\n        {\n            path: '/modpacks',\n            name: 'Modpacks',\n            permission: null,\n            component: ModpacksPage,\n        },`;
             content = content.slice(0, insertIdx) + modpackRoute + content.slice(insertIdx);
             fs.writeFileSync(routesTsPath, content);
-            console.log('✓ Rota /modpacks adicionada no routes.ts (via ServerRoutes array).');
+            console.log('✓ Rota /modpacks adicionada no routes.ts (via server array).');
         } else {
-            fs.writeFileSync(routesTsPath, content);
-            console.log('ℹ Array ServerRoutes não encontrado - adicionar rota manualmente se necessário.');
+            console.log('ℹ Array server: [] não encontrado - adicionar rota manualmente se necessário.');
         }
     } else {
         console.log('ℹ Rota /modpacks já existe no routes.ts.');
