@@ -208,7 +208,7 @@ export default function ModpacksContainer() {
       // Se há busca por texto, usa pageSize maior e sort por relevância (Popularity=2)
       // para maximizar chances de encontrar o modpack
       const hasSearch = searchQuery.trim().length > 0;
-      const pageSize = hasSearch ? 100 : 50;
+      const pageSize = 50; // CurseForge limita a 50
       const sortField = hasSearch ? 2 : (CF_SORT_MAP[sortBy] || 2);
 
       let url = `https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&pageSize=${pageSize}&index=0`;
