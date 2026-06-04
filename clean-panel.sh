@@ -77,6 +77,32 @@ if (fs.existsSync(routesTsPath)) {
     fs.writeFileSync(routesTsPath, content);
     console.log(`✓ Bloco de rota McModpacksContainer removido do routes.ts`);
 }
+
+// 4. Injetar link de navegação no ServerElements.tsx
+const serverElementsPath = path.join(panelDir, 'resources/scripts/routers/ServerElements.tsx');
+if (fs.existsSync(serverElementsPath)) {
+    let content = fs.readFileSync(serverElementsPath, 'utf8');
+    if (!content.includes('/modpacks')) {
+        const navLinkMatch = content.match(/(<NavLink[^>]+to=\{[^}]+files[^}]*\}[^>]*>[\s\S]*?<\/NavLink>)/);
+        if (navLinkMatch) {
+            const modpackLink = `\n                    <NavLink to={\`\${match.url}/modpacks\`}>\n                        Modpacks\n                    </NavLink>`;
+            content = content.replace(navLinkMatch[0], navLinkMatch[0] + modpackLink);
+            fs.writeFileSync(serverElementsPath, content);
+            console.log('✓ Link Modpacks injetado no ServerElements.tsx');
+        } else {
+            // Tenta um padrão mais genérico
+            const anyNavLink = content.match(/(<NavLink[^>]+>[\s\S]*?<\/NavLink>)/);
+            if (anyNavLink) {
+                const modpackLink = `\n                    <NavLink to={\`\${match.url}/modpacks\`}>\n                        Modpacks\n                    </NavLink>`;
+                content = content.replace(anyNavLink[0], anyNavLink[0] + modpackLink);
+                fs.writeFileSync(serverElementsPath, content);
+                console.log('✓ Link Modpacks injetado (padrão genérico)');
+            }
+        }
+    } else {
+        console.log('ℹ Link Modpacks já existe em ServerElements.tsx');
+    }
+}
 EOF
 
 node /tmp/clean_addons.js

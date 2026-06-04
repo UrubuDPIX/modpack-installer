@@ -7,6 +7,7 @@ import {
   faCheck,
   faExclamationTriangle,
   faSearch,
+  faCog,
 } from "@fortawesome/free-solid-svg-icons";
 
 interface ModrinthProject {
@@ -52,24 +53,16 @@ const CATEGORIES = [
 const LOADERS = ["forge", "fabric", "quilt", "neoforge"];
 
 const MINECRAFT_VERSIONS = [
-  "1.21.4",
-  "1.21.1",
-  "1.20.6",
-  "1.20.4",
-  "1.20.1",
-  "1.19.4",
-  "1.19.2",
-  "1.18.2",
+  "1.21.4","1.21.1","1.20.6","1.20.4","1.20.1","1.19.4","1.19.2","1.18.2",
 ];
 
 interface ModpacksContainerProps {
   serverId: string;
 }
 
-export default function ModpacksContainer({
-  serverId,
-}: ModpacksContainerProps) {
+export default function ModpacksContainer({ serverId }: ModpacksContainerProps) {
   const id = serverId;
+  const [provider, setProvider] = useState<"modrinth" | "curseforge">("modrinth");
   const [modpacks, setModpacks] = useState<ModrinthProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,48 +70,56 @@ export default function ModpacksContainer({
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedLoader, setSelectedLoader] = useState("");
   const [selectedVersion, setSelectedVersion] = useState("");
-  const [sortBy, setSortBy] = useState<
-    "relevance" | "downloads" | "follows" | "newest"
-  >("relevance");
+  const [sortBy, setSortBy] = useState<"relevance" | "downloads" | "follows" | "newest">("relevance");
   const [installedModpack, setInstalledModpack] = useState<any>(null);
+  const [curseforgeKey, setCurseforgeKey] = useState("");
+  const [showKeyInput, setShowKeyInput] = useState(false);
 
-  const buildSearchUrl = () => {
-    const facets: string[] = ['["project_type:modpack"]'];
-    if (selectedCategory) facets.push(`["categories:${selectedCategory}"]`);
-    if (selectedLoader) facets.push(`["categories:${selectedLoader}"]`);
-    if (selectedVersion) facets.push(`["versions:${selectedVersion}"]`);
+  useEffect(() => {
+    const saved = localStorage.getItem("modpack_curseforge_key");
+    if (saved) setCurseforgeKey(saved);
+  }, []);
 
+  const buildModrinthUrl = () => {
+    const baseFacets: string[] = [JSON.stringify(["project_type:modpack"])];
+    if (selectedCategory) baseFacets.push(JSON.stringify(["categories:" + selectedCategory]));
+    if (selectedLoader) baseFacets.push(JSON.stringify(["categories:" + selectedLoader]));
+    if (selectedVersion) baseFacets.push(JSON.stringify(["versions:" + selectedVersion]));
+
+    const facetStr = "[" + baseFacets.join(",") + "]";
     let url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(searchQuery || "")}&index=${sortBy}&limit=50`;
-    if (facets.length > 0) {
-      url += `&facets=${encodeURIComponent(facets.join(","))}`;
-    }
+    url += `&facets=${encodeURIComponent(facetStr)}`;
+    return url;
+  };
+
+  const buildCurseforgeUrl = () => {
+    let url = `https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&pageSize=50`;
+    if (searchQuery) url += `&searchFilter=${encodeURIComponent(searchQuery)}`;
+    if (selectedVersion) url += `&gameVersion=${selectedVersion}`;
+    const sortMap: any = { relevance: 1, downloads: 6, follows: 11, newest: 11 };
+    url += `&sortField=${sortMap[sortBy] || 1}`;
     return url;
   };
 
   const fetchModrinthModpacks = async () => {
     try {
       setLoading(true);
-      const response = await fetch(buildSearchUrl());
+      setError(null);
+      const response = await fetch(buildModrinthUrl());
       if (!response.ok) throw new Error("Erro ao buscar modpacks");
       const data = await response.json();
       const hits = data.hits || [];
 
-      // Fetch latest version for each modpack
       const enriched = await Promise.all(
         hits.map(async (hit: any) => {
           try {
-            const vRes = await fetch(
-              `https://api.modrinth.com/v2/project/${hit.slug}/version?limit=1`,
-            );
+            const vRes = await fetch(`https://api.modrinth.com/v2/project/${hit.slug}/version?limit=1`);
             const versions = vRes.ok ? await vRes.json() : [];
-            return {
-              ...hit,
-              latest_version: versions[0] || null,
-            };
+            return { ...hit, latest_version: versions[0] || null };
           } catch {
             return { ...hit, latest_version: null };
           }
-        }),
+        })
       );
 
       setModpacks(enriched);
@@ -129,27 +130,79 @@ export default function ModpacksContainer({
     }
   };
 
+  const fetchCurseforgeModpacks = async () => {
+    if (!curseforgeKey) {
+      setError("Chave de API do CurseForge não configurada. Clique em ⚙ para adicionar.");
+      setLoading(false);
+      setModpacks([]);
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(buildCurseforgeUrl(), {
+        headers: { "x-api-key": curseforgeKey },
+      });
+      if (!response.ok) throw new Error("Erro ao buscar modpacks do CurseForge");
+      const data = await response.json();
+      const hits = (data.data || []).map((mod: any) => ({
+        slug: mod.slug || String(mod.id),
+        title: mod.name,
+        description: mod.summary,
+        icon_url: mod.logo?.thumbnailUrl || null,
+        categories: (mod.categories || []).map((c: any) => c.name),
+        downloads: mod.downloadCount || 0,
+        followers: 0,
+        date_created: mod.dateCreated,
+        versions: [],
+        loaders: [],
+        game_versions: (mod.latestFiles?.[0]?.gameVersions || []),
+        latest_version: mod.latestFiles?.[0]
+          ? {
+              id: String(mod.latestFiles[0].id),
+              name: mod.latestFiles[0].displayName,
+              version_number: mod.latestFiles[0].fileName,
+              game_versions: mod.latestFiles[0].gameVersions || [],
+              loaders: [],
+              files: [{ url: mod.latestFiles[0].downloadUrl, size: mod.latestFiles[0].fileLength, filename: mod.latestFiles[0].fileName }],
+              date_published: mod.latestFiles[0].fileDate,
+              downloads: 0,
+              version_type: "release",
+            }
+          : null,
+      }));
+      setModpacks(hits);
+    } catch (err) {
+      setError("Erro ao carregar CurseForge. Verifique sua chave de API.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchModpacks = () => {
+    if (provider === "modrinth") fetchModrinthModpacks();
+    else fetchCurseforgeModpacks();
+  };
+
   const fetchInstalledModpack = async () => {
     try {
       const response = await fetch(`/api/client/servers/${id}/modpack`);
-      if (!response.ok) throw new Error("Erro ao verificar modpack instalado");
+      if (!response.ok) return;
       const data = await response.json();
-      if (data.server_modpack) {
-        setInstalledModpack(data);
-      }
-    } catch (err) {
-      console.log("Nenhum modpack instalado");
+      if (data.server_modpack) setInstalledModpack(data);
+    } catch {
+      // no installed modpack
     }
   };
 
   useEffect(() => {
-    fetchModrinthModpacks();
+    fetchModpacks();
     if (id) fetchInstalledModpack();
-  }, [id, selectedCategory, selectedLoader, selectedVersion, sortBy]);
+  }, [id, provider, selectedCategory, selectedLoader, selectedVersion, sortBy]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchModrinthModpacks();
+    fetchModpacks();
   };
 
   const installModpack = async (slug: string, versionId: string) => {
@@ -157,12 +210,12 @@ export default function ModpacksContainer({
       const response = await fetch(`/api/client/servers/${id}/modpack`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modpack_slug: slug, version_id: versionId }),
+        body: JSON.stringify({ modpack_slug: slug, version_id: versionId, provider }),
       });
-      if (!response.ok) throw new Error("Erro ao instalar modpack");
+      if (!response.ok) throw new Error();
       alert("Modpack agendado para instalação!");
       fetchInstalledModpack();
-    } catch (err) {
+    } catch {
       alert("Erro ao instalar modpack");
     }
   };
@@ -173,15 +226,81 @@ export default function ModpacksContainer({
     return n.toString();
   };
 
+  const saveCurseforgeKey = () => {
+    localStorage.setItem("modpack_curseforge_key", curseforgeKey);
+    setShowKeyInput(false);
+    fetchCurseforgeModpacks();
+  };
+
   return (
     <div className="p-6" style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <h1 className="text-2xl font-bold mb-2 flex items-center">
-        <FontAwesomeIcon icon={faBox} className="mr-3" />
-        Modpacks Disponíveis
-      </h1>
-      <p className="text-gray-400 text-sm mb-6">
-        Descubra e instale modpacks populares do Modrinth no seu servidor
-      </p>
+      {/* Header with provider switcher */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center">
+            <FontAwesomeIcon icon={faBox} className="mr-3" />
+            Modpacks Disponíveis
+          </h1>
+          <p className="text-gray-400 text-sm mt-1">
+            Descubra e instale modpacks no seu servidor Minecraft
+          </p>
+        </div>
+
+        {/* Provider switcher */}
+        <div className="flex items-center gap-2">
+          <div className="flex bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
+            <button
+              onClick={() => { setProvider("modrinth"); setModpacks([]); setError(null); }}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${provider === "modrinth" ? "bg-green-600 text-white" : "text-gray-400 hover:text-white"}`}
+            >
+              Modrinth
+            </button>
+            <button
+              onClick={() => { setProvider("curseforge"); setModpacks([]); setError(null); }}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${provider === "curseforge" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-white"}`}
+            >
+              CurseForge
+            </button>
+          </div>
+          {provider === "curseforge" && (
+            <button
+              onClick={() => setShowKeyInput(!showKeyInput)}
+              title="Configurar chave API do CurseForge"
+              className="bg-gray-800 border border-gray-700 hover:border-orange-500 text-gray-400 hover:text-orange-400 p-2 rounded-lg transition-colors"
+            >
+              <FontAwesomeIcon icon={faCog} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* CurseForge API Key input */}
+      {showKeyInput && provider === "curseforge" && (
+        <div className="bg-gray-800 border border-orange-700/50 rounded-xl p-4 mb-4">
+          <p className="text-sm text-gray-300 mb-1 font-medium">🔑 Chave de API do CurseForge</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Obtenha sua chave em{" "}
+            <a href="https://console.curseforge.com/" target="_blank" rel="noreferrer" className="text-orange-400 hover:underline">
+              console.curseforge.com
+            </a>
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={curseforgeKey}
+              onChange={(e) => setCurseforgeKey(e.target.value)}
+              placeholder="$2a$10$..."
+              className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-orange-500"
+            />
+            <button
+              onClick={saveCurseforgeKey}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Salvar
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-900/50 border border-red-700 text-red-200 p-3 rounded mb-4 flex items-center text-sm">
@@ -197,8 +316,7 @@ export default function ModpacksContainer({
             Modpack Instalado: {installedModpack.modpack?.name}
           </h2>
           <p className="text-gray-300 text-xs">
-            Versão: {installedModpack.version?.version} | Status:{" "}
-            {installedModpack.server_modpack?.status}
+            Versão: {installedModpack.version?.version} | Status: {installedModpack.server_modpack?.status}
           </p>
         </div>
       )}
@@ -207,10 +325,7 @@ export default function ModpacksContainer({
       <form onSubmit={handleSearch} className="mb-6">
         <div className="flex gap-2 mb-3">
           <div className="flex-1 relative">
-            <FontAwesomeIcon
-              icon={faSearch}
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm"
-            />
+            <FontAwesomeIcon icon={faSearch} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm" />
             <input
               type="text"
               value={searchQuery}
@@ -219,59 +334,25 @@ export default function ModpacksContainer({
               className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
             />
           </div>
-          <button
-            type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
+          <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             Buscar
           </button>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
-          >
+          <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500">
             <option value="">Todas Categorias</option>
-            {CATEGORIES.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
+            {CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
           </select>
-
-          <select
-            value={selectedLoader}
-            onChange={(e) => setSelectedLoader(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
-          >
+          <select value={selectedLoader} onChange={(e) => setSelectedLoader(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500">
             <option value="">Todos Loaders</option>
-            {LOADERS.map((l) => (
-              <option key={l} value={l}>
-                {l.charAt(0).toUpperCase() + l.slice(1)}
-              </option>
-            ))}
+            {LOADERS.map((l) => <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>)}
           </select>
-
-          <select
-            value={selectedVersion}
-            onChange={(e) => setSelectedVersion(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
-          >
+          <select value={selectedVersion} onChange={(e) => setSelectedVersion(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500">
             <option value="">Todas Versões</option>
-            {MINECRAFT_VERSIONS.map((v) => (
-              <option key={v} value={v}>
-                MC {v}
-              </option>
-            ))}
+            {MINECRAFT_VERSIONS.map((v) => <option key={v} value={v}>MC {v}</option>)}
           </select>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
-          >
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500">
             <option value="relevance">Relevância</option>
             <option value="downloads">Mais Downloads</option>
             <option value="follows">Mais Populares</option>
@@ -280,19 +361,13 @@ export default function ModpacksContainer({
         </div>
       </form>
 
-      {/* Recommended / Categories */}
+      {/* Popular categories */}
       {!selectedCategory && !searchQuery && (
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">
-            Categorias Populares
-          </h3>
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">Categorias Populares</h3>
           <div className="flex flex-wrap gap-2">
             {CATEGORIES.slice(0, 6).map((cat) => (
-              <button
-                key={cat.key}
-                onClick={() => setSelectedCategory(cat.key)}
-                className="bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-blue-500 text-gray-300 hover:text-white px-3 py-1.5 rounded-lg text-xs transition-all"
-              >
+              <button key={cat.key} onClick={() => setSelectedCategory(cat.key)} className="bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-blue-500 text-gray-300 hover:text-white px-3 py-1.5 rounded-lg text-xs transition-all">
                 {cat.label}
               </button>
             ))}
@@ -309,69 +384,32 @@ export default function ModpacksContainer({
         <div className="text-gray-400 text-center py-16">
           <FontAwesomeIcon icon={faBox} className="text-4xl mb-4 opacity-30" />
           <p className="text-lg mb-2">Nenhum modpack encontrado</p>
-          <p className="text-sm text-gray-500">
-            Tente ajustar os filtros ou termos de busca.
-          </p>
+          <p className="text-sm text-gray-500">Tente ajustar os filtros ou termos de busca.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {modpacks.map((modpack) => (
-            <div
-              key={modpack.slug}
-              className="bg-gray-800 border border-gray-700 rounded-xl p-4 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/10 transition-all group"
-            >
+            <div key={modpack.slug} className="bg-gray-800 border border-gray-700 rounded-xl p-4 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/10 transition-all group">
               <div className="flex items-start gap-3 mb-3">
-                <img
-                  src={modpack.icon_url || "/default-modpack.png"}
-                  alt={modpack.title}
-                  className="w-12 h-12 rounded-lg object-cover border border-gray-600 flex-shrink-0"
-                />
+                <img src={modpack.icon_url || "/default-modpack.png"} alt={modpack.title} className="w-12 h-12 rounded-lg object-cover border border-gray-600 flex-shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} />
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors">
-                    {modpack.title}
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {formatDownloads(modpack.downloads)} downloads
-                  </p>
+                  <h3 className="text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors">{modpack.title}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">{formatDownloads(modpack.downloads)} downloads</p>
                 </div>
               </div>
-
-              <p className="text-xs text-gray-400 line-clamp-2 mb-3 h-8">
-                {modpack.description}
-              </p>
-
+              <p className="text-xs text-gray-400 line-clamp-2 mb-3 h-8">{modpack.description}</p>
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {modpack.categories.slice(0, 3).map((cat) => (
-                  <span
-                    key={cat}
-                    className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] uppercase tracking-wide"
-                  >
-                    {cat}
-                  </span>
+                  <span key={cat} className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] uppercase tracking-wide">{cat}</span>
                 ))}
               </div>
-
               <div className="flex items-center justify-between pt-3 border-t border-gray-700/50">
                 <div className="flex flex-col gap-0.5">
-                  {modpack.game_versions.slice(0, 1).map((v) => (
-                    <span key={v} className="text-[10px] text-gray-500">
-                      MC {v}
-                    </span>
-                  ))}
-                  {modpack.loaders.slice(0, 1).map((l) => (
-                    <span
-                      key={l}
-                      className="text-[10px] text-gray-500 capitalize"
-                    >
-                      {l}
-                    </span>
-                  ))}
+                  {modpack.game_versions.slice(0, 1).map((v) => <span key={v} className="text-[10px] text-gray-500">MC {v}</span>)}
+                  {modpack.loaders.slice(0, 1).map((l) => <span key={l} className="text-[10px] text-gray-500 capitalize">{l}</span>)}
                 </div>
                 <button
-                  onClick={() =>
-                    modpack.latest_version &&
-                    installModpack(modpack.slug, modpack.latest_version.id)
-                  }
+                  onClick={() => modpack.latest_version && installModpack(modpack.slug, modpack.latest_version.id)}
                   disabled={!modpack.latest_version || !id}
                   className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
                 >
