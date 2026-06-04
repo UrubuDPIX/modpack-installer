@@ -538,13 +538,20 @@ const panelDir = process.argv[2];
   c = c.replace(/<NavLink[^>]*\/modpacks[^>]*>[\s\S]*?<\/NavLink>\n?/g, '');
   
   if (!c.includes('/modpacks')) {
-    const pm = c.match(/<NavLink[^>]*\/plugins[^>]*>[\s\S]*?<\/NavLink>/);
+    // Tenta encontrar plugins, se nao achar, tenta files
+    let pm = c.match(/<NavLink[^>]*\/plugins[^>]*>[\s\S]*?<\/NavLink>/);
+    if (!pm) {
+        pm = c.match(/<NavLink[^>]*\/files[^>]*>[\s\S]*?<\/NavLink>/);
+    }
+    
     if (pm) {
       const ls = c.lastIndexOf('\n', pm.index) + 1;
       const ind = (c.slice(ls, pm.index).match(/^(\s*)/) || ['',''])[1];
       const inj = '\n' + ind + '<NavLink to={`${match.url}/modpacks`}>' +
                   '\n' + ind + '    <FontAwesomeIcon icon={faBox} /> Modpacks' +
                   '\n' + ind + '</NavLink>';
+      
+      // Inserir APOS o NavLink encontrado
       c = c.slice(0, pm.index + pm[0].length) + inj + c.slice(pm.index + pm[0].length);
       
       if (!c.includes('faBox')) {
@@ -558,7 +565,9 @@ const panelDir = process.argv[2];
       if (!c.includes('FontAwesomeIcon')) {
           c = "import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';\n" + c;
       }
-      console.log('\\u2713 Modpacks NavLink injetado no ServerElements.tsx');
+      console.log('\u2713 Modpacks NavLink injetado no ServerElements.tsx');
+    } else {
+      console.log('\u26a0 NavLink base nao encontrado em ServerElements.tsx. A tab Modpacks nao aparecera na barra superior.');
     }
   }
   fs.writeFileSync(sePath, c);
