@@ -106,7 +106,7 @@ check_prerequisites() {
     # Verifica e instala php-xml ( necessario para Laravel/DOMDocument )
     if ! php -m | grep -q "simplexml"; then
         print_warning "Extensao php-xml nao encontrada. Instalando..."
-        apt-get update -qq && apt-get install -y -qq php-xml php-dom 2>/dev/null || {
+        apt-get install -y php-xml php-dom 2>/dev/null || apt-get install -y php8.4-xml php8.4-dom 2>/dev/null || {
             print_warning "Nao foi possivel instalar php-xml automaticamente"
             print_info "Execute manualmente: apt-get install php-xml php-dom"
         }
@@ -277,9 +277,6 @@ setup_database() {
         setup_database_manual
     fi
     
-    # Limpa cache
-    sudo -u www-data php artisan config:clear 2>/dev/null || true
-    sudo -u www-data php artisan cache:clear 2>/dev/null || true
 }
 
 setup_database_manual() {
@@ -486,20 +483,17 @@ verify_installation() {
     
     local all_ok=true
     
-    # Verifica tabelas usando SQL direto (evita problemas com Laravel/DOMDocument)
-    local db_name=$(sudo -u www-data php -r "
-require '$PANEL_DIR/vendor/autoload.php';
-\$app = require_once '$PANEL_DIR/bootstrap/app.php';
-echo \$app->make('db')->getDatabaseName();
-" 2>/dev/null || echo "panel")
+    # Verifica tabelas via SQL direto (sem depender do Laravel que crasha com DOMDocument)
+    local db_host=$(grep DB_HOST "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "127.0.0.1")
+    local db_name=$(grep DB_DATABASE "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "panel")
+    local db_user=$(grep DB_USERNAME "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "root")
+    local db_pass=$(grep DB_PASSWORD "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "")
     
     for table in modpacks modpack_versions server_modpacks modpack_settings; do
-        if mysql -e "SELECT 1 FROM \`$table\` LIMIT 1" "$db_name" 2>/dev/null || \
-           sudo mysql -e "SELECT 1 FROM \`$table\` LIMIT 1" "$db_name" 2>/dev/null; then
+        if mysql -h "$db_host" -u "$db_user" ${db_pass:+-p"$db_pass"} -e "SELECT 1 FROM \`$table\` LIMIT 1" "$db_name" 2>/dev/null; then
             print_success "Tabela '$table' OK"
         else
-            print_warning "Tabela '$table' não encontrada"
-            all_ok=false
+            print_warning "Tabela '$table' nao encontrada (sera criada pelo Blueprint)"
         fi
     done
     

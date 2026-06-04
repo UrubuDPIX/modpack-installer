@@ -144,6 +144,26 @@ try {
         echo "  ℹ Tabela 'server_modpacks' ja existe\n";
     }
     
+    // Tabela de configuracoes
+    if (!$schema->hasTable('modpack_settings')) {
+        $schema->create('modpack_settings', function ($table) {
+            $table->id();
+            $table->string('key')->unique();
+            $table->text('value')->nullable();
+            $table->timestamps();
+        });
+        // Insert defaults
+        DB::table('modpack_settings')->insert([
+            ['key' => 'curseforge_api_key', 'value' => '', 'created_at' => now(), 'updated_at' => now()],
+            ['key' => 'modrinth_enabled', 'value' => '1', 'created_at' => now(), 'updated_at' => now()],
+            ['key' => 'curseforge_enabled', 'value' => '0', 'created_at' => now(), 'updated_at' => now()],
+            ['key' => 'default_loader', 'value' => 'forge', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        echo "  ✓ Tabela 'modpack_settings' criada com defaults\n";
+    } else {
+        echo "  ℹ Tabela 'modpack_settings' ja existe\n";
+    }
+    
 } catch (Exception $e) {
     echo "  ⚠ Erro ao criar tabelas: " . $e->getMessage() . "\n";
 }
