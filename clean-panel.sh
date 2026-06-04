@@ -54,13 +54,28 @@ if (fs.existsSync(serverRouterPath)) {
     console.log(`✓ Referências limpas no ServerRouter.tsx`);
 }
 
-// 3. Limpar routes.ts (Jexactyl)
+// 3. Limpar routes.ts (Jexactyl) - remove imports E blocos de objeto
 const routesTsPath = path.join(panelDir, 'resources/scripts/routers/routes.ts');
 if (fs.existsSync(routesTsPath)) {
     let content = fs.readFileSync(routesTsPath, 'utf8');
+    
+    // Remove linhas de import do mcmodpacks/mcplugins
     content = content.split('\n').filter(line => !line.includes('mcmodpacks') && !line.includes('mcplugins')).join('\n');
+    
+    // Remove blocos de objeto {} que referenciam McModpacksContainer (objeto inteiro da rota)
+    content = content.replace(/\{\s*path:[^}]*component:\s*McModpacksContainer[^}]*\},?/gs, '');
+    content = content.replace(/\{\s*path:[^}]*component:\s*McPluginsContainer[^}]*\},?/gs, '');
+    
+    // Remove qualquer referência restante ao McModpacksContainer e McPluginsContainer
+    content = content.replace(/McModpacksContainer/g, '');
+    content = content.replace(/McPluginsContainer/g, '');
+    
+    // Remove vírgulas duplas ou vírgulas antes de ] que possam ter sobrado
+    content = content.replace(/,\s*,/g, ',');
+    content = content.replace(/,\s*\]/g, '\n]');
+    
     fs.writeFileSync(routesTsPath, content);
-    console.log(`✓ Referências limpas no routes.ts`);
+    console.log(`✓ Bloco de rota McModpacksContainer removido do routes.ts`);
 }
 EOF
 
