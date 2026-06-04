@@ -40,14 +40,14 @@ interface ModrinthVersion {
 }
 
 const CATEGORIES = [
-  { key: "adventure", label: "Adventure" },
-  { key: "challenging", label: "Challenging" },
-  { key: "combat", label: "Combat" },
+  { key: "adventure", label: "Adventure & RPG" },
+  { key: "combat", label: "Combat / PvP" },
+  { key: "exploration", label: "Exploration" },
+  { key: "hardcore", label: "Hardcore" },
   { key: "kitchen-sink", label: "Kitchen Sink" },
   { key: "lightweight", label: "Lightweight" },
   { key: "magic", label: "Magic" },
   { key: "multiplayer", label: "Multiplayer" },
-  { key: "optimization", label: "Optimization" },
   { key: "quests", label: "Quests" },
   { key: "technology", label: "Technology" },
 ];
@@ -96,8 +96,22 @@ export default function ModpacksContainer() {
     let url = `https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&pageSize=50`;
     if (searchQuery) url += `&searchFilter=${encodeURIComponent(searchQuery)}`;
     if (selectedVersion) url += `&gameVersion=${selectedVersion}`;
-    const sortMap: any = { relevance: 1, downloads: 6, follows: 11, newest: 11 };
-    url += `&sortField=${sortMap[sortBy] || 1}`;
+    if (selectedLoader) {
+      if (selectedLoader === "forge") url += `&modLoaderType=1`;
+      else if (selectedLoader === "fabric") url += `&modLoaderType=4`;
+      else if (selectedLoader === "quilt") url += `&modLoaderType=5`;
+      else if (selectedLoader === "neoforge") url += `&modLoaderType=6`;
+    }
+    if (selectedCategory) {
+      const catMap: any = {
+        adventure: 4472, combat: 4473, exploration: 4475, hardcore: 4476,
+        magic: 4478, "kitchen-sink": 4481, technology: 4482,
+        lightweight: 4483, quests: 4484, multiplayer: 4479,
+      };
+      if (catMap[selectedCategory]) url += `&categoryId=${catMap[selectedCategory]}`;
+    }
+    const sortMap: any = { relevance: 2, downloads: 6, follows: 2, newest: 3 };
+    url += `&sortField=${sortMap[sortBy] || 2}`;
     return url;
   };
 
