@@ -408,7 +408,7 @@ if (fs.existsSync(serverRouterPath)) {
         // Adicionar import
         const lastImportMatch = [...content.matchAll(/^import .*;$/gm)].pop();
         if (lastImportMatch) {
-            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/pages/ModpacksPage';\n";
+            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/client/pages/ModpacksPage';\n";
             content = content.slice(0, lastImportMatch.index + lastImportMatch[0].length) + importLine + content.slice(lastImportMatch.index + lastImportMatch[0].length);
         }
         
@@ -443,7 +443,7 @@ if (fs.existsSync(routesTsPath)) {
         // Adicionar import
         const lastImportMatch = [...content.matchAll(/^import .+from .+;$/gm)].pop();
         if (lastImportMatch) {
-            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/pages/ModpacksPage';\n";
+            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/client/pages/ModpacksPage';\n";
             const idx = lastImportMatch.index + lastImportMatch[0].length;
             content = content.slice(0, idx) + importLine + content.slice(idx);
         }
