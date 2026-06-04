@@ -220,7 +220,8 @@ export default function ModpacksContainer() {
     }
   };
 
-  const formatDownloads = (n: number) => {
+  const formatDownloads = (n?: number | null) => {
+    if (!n) return "0";
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
     return n.toString();
@@ -399,14 +400,14 @@ export default function ModpacksContainer() {
               </div>
               <p className="text-xs text-gray-400 line-clamp-2 mb-3 h-8">{modpack.description}</p>
               <div className="flex flex-wrap gap-1.5 mb-3">
-                {modpack.categories.slice(0, 3).map((cat) => (
+                {(modpack.categories || []).slice(0, 3).map((cat: string) => (
                   <span key={cat} className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] uppercase tracking-wide">{cat}</span>
                 ))}
               </div>
               <div className="flex items-center justify-between pt-3 border-t border-gray-700/50">
                 <div className="flex flex-col gap-0.5">
-                  {modpack.game_versions.slice(0, 1).map((v) => <span key={v} className="text-[10px] text-gray-500">MC {v}</span>)}
-                  {modpack.loaders.slice(0, 1).map((l) => <span key={l} className="text-[10px] text-gray-500 capitalize">{l}</span>)}
+                  {(modpack.game_versions || modpack.versions || []).slice(0, 1).map((v: string) => <span key={v} className="text-[10px] text-gray-500">MC {v}</span>)}
+                  {(modpack.loaders || []).slice(0, 1).map((l: string) => <span key={l} className="text-[10px] text-gray-500 capitalize">{l}</span>)}
                 </div>
                 <button
                   onClick={() => modpack.latest_version && installModpack(modpack.slug, modpack.latest_version.id)}
