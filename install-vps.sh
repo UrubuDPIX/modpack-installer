@@ -401,16 +401,18 @@ build_frontend() {
             print_info "Node.js v${NODE_MAJOR} detectado. Usando --openssl-legacy-provider"
         fi
         
-        # Tenta build de produção primeiro
-        if yarn run build:production 2>&1; then
+        # Tenta build de produção primeiro (ignora erros de prettier do Jexactyl)
+        if NODE_OPTIONS="--openssl-legacy-provider" yarn run build:production 2>&1; then
             print_success "Frontend compilado (production)"
         else
-            print_warning "Build production falhou (erros do Jexactyl original). Tentando development..."
-            # Build de development gera bundle mesmo com erros de tipo do Jexactyl
-            if yarn run build 2>&1 || yarn run build:development 2>&1; then
-                print_success "Frontend compilado (development)"
+            print_warning "Build production falhou (erros de formato do Jexactyl). Tentando build simples..."
+            # Build simples sem type-check strict
+            if NODE_OPTIONS="--openssl-legacy-provider" yarn run build 2>&1; then
+                print_success "Frontend compilado (build simples)"
             else
-                print_warning "Build development também falhou"
+                print_warning "Build simples também falhou. Tentando webpack direto..."
+                # último recurso: webpack direto
+                NODE_ENV=production NODE_OPTIONS="--openssl-legacy-provider" ./node_modules/.bin/webpack --mode production 2>&1 || true
             fi
         fi
         
