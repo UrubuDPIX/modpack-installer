@@ -14,7 +14,7 @@ export interface ModpackVersion {
   modpackId: string;
   name: string;
   minecraftVersion: string;
-  loader: 'Forge' | 'Fabric' | 'NeoForge' | 'Quilt';
+  loader: "Forge" | "Fabric" | "NeoForge" | "Quilt";
   loaderVersion: string;
   size: string;
   downloadUrl: string;
@@ -31,12 +31,12 @@ export interface ServerModpack {
   version: ModpackVersion;
   installedAt: string;
   updatedAt: string;
-  status: 'installing' | 'installed' | 'error';
+  status: "installing" | "installed" | "error";
   installLog?: string;
 }
 
 export interface InstallRequest {
   modpackId: string;
   versionId: string;
-  action: 'install' | 'reinstall' | 'downgrade' | 'update';
+  action: "install" | "reinstall" | "downgrade" | "update";
 }
