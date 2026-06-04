@@ -422,51 +422,26 @@ if (fs.existsSync(serverRouterPath)) {
     }
 }
 
-// 2. Injetar na Navegacao (ServerElements ou NavigationBar)
-const navPaths = [
-    path.join(panelDir, 'resources/scripts/routers/ServerElements.tsx'),
-    path.join(panelDir, 'resources/scripts/components/server/ServerDetailsBlock.tsx'),
-    path.join(panelDir, 'resources/scripts/components/NavigationBar.tsx')
-];
-
-for (const nav of navPaths) {
-    if (fs.existsSync(nav)) {
-        let content = fs.readFileSync(nav, 'utf8');
-        if (!content.includes('/modpacks') && content.includes('/files')) {
-            const faDownload = "import { faDownload } from '@fortawesome/free-solid-svg-icons';\n";
-            if (!content.includes('faDownload')) {
-                const faMatch = content.match(/import \{.*?\} from '@fortawesome\/free-solid-svg-icons';/s);
-                if (faMatch) {
-                    content = content.replace(faMatch[0], faMatch[0].replace('}', ', faDownload }'));
-                } else {
-                    content = faDownload + content;
-                }
-            }
-            
-            // Procura o link de Files
-            const fileLinkMatch = content.match(/<NavLink to=\{`\$\{match\.url\}\/(files|users)`\}.*?<\/NavLink>/s);
-            if (fileLinkMatch) {
-                let navLink = `
-                    <NavLink to={\`\${match.url}/modpacks\`}>
-                        <FontAwesomeIcon icon={faDownload} /> Modpacks
-                    </NavLink>`;
-                
-                // Tratar componente <Can> se existir em volta do original
-                const blockBefore = content.slice(0, fileLinkMatch.index);
-                if (blockBefore.endsWith('<Can action={\'file.*\'}>\n') || blockBefore.endsWith('<Can action={"file.*"}>\n')) {
-                    // Pterodactyl antigo com Can
-                    navLink = `
-                <Can action={'modpacks.view'}>
-                    <NavLink to={\`\${match.url}/modpacks\`}>
-                        <FontAwesomeIcon icon={faDownload} /> Modpacks
-                    </NavLink>
-                </Can>`;
-                }
-                
-                content = content.slice(0, fileLinkMatch.index + fileLinkMatch[0].length) + navLink + content.slice(fileLinkMatch.index + fileLinkMatch[0].length);
-                fs.writeFileSync(nav, content);
-                console.log("Navegacao injetada em " + path.basename(nav));
-            }
+// 2. Injetar na Navegacao via routes.ts
+const routesTsPath = path.join(panelDir, 'resources/scripts/routers/routes.ts');
+if (fs.existsSync(routesTsPath)) {
+    let content = fs.readFileSync(routesTsPath, 'utf8');
+    if (!content.includes('/modpacks') && !content.includes('ModpacksPage')) {
+        // Adicionar import
+        const lastImportMatch = [...content.matchAll(/^import .+from .+;$/gm)].pop();
+        if (lastImportMatch) {
+            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/pages/ModpacksPage';\n";
+            const idx = lastImportMatch.index + lastImportMatch[0].length;
+            content = content.slice(0, idx) + importLine + content.slice(idx);
+        }
+        // Adicionar objeto de rota na lista do servidor
+        const serverRoutesMatch = content.match(/const ServerRoutes\s*=\s*\[/);
+        if (serverRoutesMatch) {
+            const insertIdx = serverRoutesMatch.index + serverRoutesMatch[0].length;
+            const modpackRoute = `\n    {\n        path: '/modpacks',\n        name: 'Modpacks',\n        permission: null,\n        component: ModpacksPage,\n        exact: true,\n    },`;
+            content = content.slice(0, insertIdx) + modpackRoute + content.slice(insertIdx);
+            fs.writeFileSync(routesTsPath, content);
+            console.log('✓ Rota /modpacks adicionada no routes.ts');
         }
     }
 }
