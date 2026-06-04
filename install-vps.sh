@@ -466,18 +466,9 @@ const panelDir = process.argv[2];
       const ls = c.lastIndexOf('\n', navMatch.index) + 1;
       const ind = (c.slice(ls, navMatch.index).match(/^(\s*)/) || ['',''])[1];
       const inj = '\n' + ind + '<NavLink to={`${match.url}/modpacks`}>' +
-                  '\n' + ind + '    <FontAwesomeIcon icon={faBox} />' +
                   '\n' + ind + '    Modpacks' +
                   '\n' + ind + '</NavLink>';
       c = c.slice(0, navMatch.index + navMatch[0].length) + inj + c.slice(navMatch.index + navMatch[0].length);
-
-      // Adicionar import do faBox se nao existir
-      if (!c.includes('faBox')) {
-        const faMatch = c.match(/import\s+\{[^}]*\}\s+from\s+['"]@fortawesome\/free-solid-svg-icons['"];?/);
-        if (faMatch) {
-          c = c.slice(0, faMatch.index) + faMatch[0].replace('{', '{ faBox, ') + c.slice(faMatch.index + faMatch[0].length);
-        }
-      }
       console.log('\u2713 NavLink de Modpacks injetado no ServerRouter.tsx');
     } else {
       console.log('\u26a0 NavLink /files nao encontrado para injecao');
