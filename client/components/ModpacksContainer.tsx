@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faDownload,
@@ -12,7 +12,7 @@ import {
 // @ts-ignore
 import { ServerContext } from '@/state/server';
 
-interface ModrinthProject {
+interface ModpackItem {
   slug: string;
   title: string;
   description: string;
@@ -21,26 +21,13 @@ interface ModrinthProject {
   downloads: number;
   followers: number;
   date_created: string;
-  versions: string[];
-  loaders: string[];
-  game_versions: string[];
-  latest_version: ModrinthVersion | null;
-}
-
-interface ModrinthVersion {
-  id: string;
-  name: string;
-  version_number: string;
   game_versions: string[];
   loaders: string[];
-  files: { url: string; size: number; filename: string }[];
-  date_published: string;
-  downloads: number;
-  version_type: string;
+  latest_version: any | null;
 }
 
 const CATEGORIES = [
-  { key: "adventure", label: "Adventure & RPG" },
+  { key: "adventure", label: "Adventure" },
   { key: "combat", label: "Combat / PvP" },
   { key: "exploration", label: "Exploration" },
   { key: "hardcore", label: "Hardcore" },
@@ -58,12 +45,41 @@ const MINECRAFT_VERSIONS = [
   "1.21.4","1.21.1","1.20.6","1.20.4","1.20.1","1.19.4","1.19.2","1.18.2",
 ];
 
+// CurseForge category IDs for modpacks (classId 4471)
+const CF_CATEGORY_MAP: Record<string, number> = {
+  adventure: 4472,
+  combat: 4473,
+  exploration: 4475,
+  hardcore: 4476,
+  magic: 4478,
+  multiplayer: 4479,
+  "kitchen-sink": 4481,
+  technology: 4482,
+  lightweight: 4483,
+  quests: 4484,
+};
+
+// CurseForge modLoaderType enum
+const CF_LOADER_MAP: Record<string, number> = {
+  forge: 1,
+  fabric: 4,
+  quilt: 5,
+  neoforge: 6,
+};
+
+// CurseForge sortField enum
+const CF_SORT_MAP: Record<string, number> = {
+  relevance: 2,  // Popularity (same as CF website default)
+  downloads: 6,  // TotalDownloads
+  follows: 2,    // Popularity
+  newest: 3,     // LastUpdated
+};
+
 export default function ModpacksContainer() {
-  // Pega o UUID do servidor via ServerContext (padrão Jexactyl)
   const id = ServerContext.useStoreState((state: any) => state.server.data?.uuid);
 
   const [provider, setProvider] = useState<"modrinth" | "curseforge">("modrinth");
-  const [modpacks, setModpacks] = useState<ModrinthProject[]>([]);
+  const [modpacks, setModpacks] = useState<ModpackItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -75,74 +91,100 @@ export default function ModpacksContainer() {
   const [curseforgeKey, setCurseforgeKey] = useState("");
   const [showKeyInput, setShowKeyInput] = useState(false);
 
+  // Use ref to always have current provider in async callbacks
+  const providerRef = useRef(provider);
+  providerRef.current = provider;
+
   useEffect(() => {
     const saved = localStorage.getItem("modpack_curseforge_key");
     if (saved) setCurseforgeKey(saved);
   }, []);
 
-  const buildModrinthUrl = () => {
-    const baseFacets: string[] = [JSON.stringify(["project_type:modpack"])];
-    if (selectedCategory) baseFacets.push(JSON.stringify(["categories:" + selectedCategory]));
-    if (selectedLoader) baseFacets.push(JSON.stringify(["categories:" + selectedLoader]));
-    if (selectedVersion) baseFacets.push(JSON.stringify(["versions:" + selectedVersion]));
-
-    const facetStr = "[" + baseFacets.join(",") + "]";
-    let url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(searchQuery || "")}&index=${sortBy}&limit=50`;
-    url += `&facets=${encodeURIComponent(facetStr)}`;
-    return url;
-  };
-
-  const buildCurseforgeUrl = () => {
-    let url = `https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&pageSize=50`;
-    if (searchQuery) url += `&searchFilter=${encodeURIComponent(searchQuery)}`;
-    if (selectedVersion) url += `&gameVersion=${selectedVersion}`;
-    if (selectedLoader) {
-      if (selectedLoader === "forge") url += `&modLoaderType=1`;
-      else if (selectedLoader === "fabric") url += `&modLoaderType=4`;
-      else if (selectedLoader === "quilt") url += `&modLoaderType=5`;
-      else if (selectedLoader === "neoforge") url += `&modLoaderType=6`;
-    }
-    if (selectedCategory) {
-      const catMap: any = {
-        adventure: 4472, combat: 4473, exploration: 4475, hardcore: 4476,
-        magic: 4478, "kitchen-sink": 4481, technology: 4482,
-        lightweight: 4483, quests: 4484, multiplayer: 4479,
-      };
-      if (catMap[selectedCategory]) url += `&categoryId=${catMap[selectedCategory]}`;
-    }
-    const sortMap: any = { relevance: 2, downloads: 6, follows: 2, newest: 3 };
-    url += `&sortField=${sortMap[sortBy] || 2}`;
-    return url;
-  };
+  // ── Modrinth ──────────────────────────────────────────────────────────
 
   const fetchModrinthModpacks = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(buildModrinthUrl());
+
+      // Build facets (Modrinth lumps loaders into categories)
+      const facets: string[] = [JSON.stringify(["project_type:modpack"])];
+      if (selectedCategory) facets.push(JSON.stringify(["categories:" + selectedCategory]));
+      if (selectedLoader) facets.push(JSON.stringify(["categories:" + selectedLoader]));
+      if (selectedVersion) facets.push(JSON.stringify(["versions:" + selectedVersion]));
+
+      const facetStr = "[" + facets.join(",") + "]";
+      const url =
+        `https://api.modrinth.com/v2/search?` +
+        `query=${encodeURIComponent(searchQuery || "")}` +
+        `&index=${sortBy}` +
+        `&limit=50` +
+        `&facets=${encodeURIComponent(facetStr)}`;
+
+      const response = await fetch(url);
       if (!response.ok) throw new Error("Erro ao buscar modpacks");
       const data = await response.json();
-      const hits = data.hits || [];
+      const hits: any[] = data.hits || [];
 
+      // Map search response to our unified shape.
+      // Modrinth search returns:
+      //   categories: ["technology","adventure","fabric"] (categories + loaders mixed)
+      //   display_categories: ["technology","adventure"] (only real categories)
+      //   versions: ["1.20.1","1.21.1"] (game versions, NOT version IDs)
+      const mapped: ModpackItem[] = hits.map((hit: any) => {
+        const allCats: string[] = hit.categories || [];
+        // Separate loaders from categories
+        const loaderSet = new Set(LOADERS);
+        const realCategories = allCats.filter((c: string) => !loaderSet.has(c));
+        const loaders = allCats.filter((c: string) => loaderSet.has(c));
+
+        return {
+          slug: hit.slug || hit.project_id,
+          title: hit.title,
+          description: hit.description,
+          icon_url: hit.icon_url || null,
+          categories: hit.display_categories || realCategories,
+          downloads: hit.downloads || 0,
+          followers: hit.follows || 0,
+          date_created: hit.date_created,
+          game_versions: hit.versions || [],
+          loaders: loaders,
+          latest_version: null, // We'll enrich this separately
+        };
+      });
+
+      // Enrich with latest version data (only first 20 to avoid rate limits)
       const enriched = await Promise.all(
-        hits.map(async (hit: any) => {
+        mapped.slice(0, 20).map(async (mp) => {
           try {
-            const vRes = await fetch(`https://api.modrinth.com/v2/project/${hit.slug}/version?limit=1`);
-            const versions = vRes.ok ? await vRes.json() : [];
-            return { ...hit, latest_version: versions[0] || null };
+            const vRes = await fetch(`https://api.modrinth.com/v2/project/${mp.slug}/version?limit=1`);
+            if (!vRes.ok) return mp;
+            const versions = await vRes.json();
+            return { ...mp, latest_version: versions[0] || null };
           } catch {
-            return { ...hit, latest_version: null };
+            return mp;
           }
         })
       );
 
-      setModpacks(enriched);
+      // Add remaining without enrichment
+      const rest = mapped.slice(20).map((mp) => ({ ...mp, latest_version: null }));
+
+      if (providerRef.current === "modrinth") {
+        setModpacks([...enriched, ...rest]);
+      }
     } catch (err) {
-      setError("Não foi possível carregar os modpacks do Modrinth");
+      if (providerRef.current === "modrinth") {
+        setError("Não foi possível carregar os modpacks do Modrinth");
+      }
     } finally {
-      setLoading(false);
+      if (providerRef.current === "modrinth") {
+        setLoading(false);
+      }
     }
   };
+
+  // ── CurseForge ────────────────────────────────────────────────────────
 
   const fetchCurseforgeModpacks = async () => {
     if (!curseforgeKey) {
@@ -154,44 +196,84 @@ export default function ModpacksContainer() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(buildCurseforgeUrl(), {
+
+      let url = `https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&pageSize=50`;
+      if (searchQuery) url += `&searchFilter=${encodeURIComponent(searchQuery)}`;
+      if (selectedVersion) url += `&gameVersion=${selectedVersion}`;
+      if (selectedLoader && CF_LOADER_MAP[selectedLoader]) {
+        url += `&modLoaderType=${CF_LOADER_MAP[selectedLoader]}`;
+      }
+      if (selectedCategory && CF_CATEGORY_MAP[selectedCategory]) {
+        url += `&categoryId=${CF_CATEGORY_MAP[selectedCategory]}`;
+      }
+      url += `&sortField=${CF_SORT_MAP[sortBy] || 2}`;
+      url += `&sortOrder=desc`;
+
+      const response = await fetch(url, {
         headers: { "x-api-key": curseforgeKey },
       });
       if (!response.ok) throw new Error("Erro ao buscar modpacks do CurseForge");
       const data = await response.json();
-      const hits = (data.data || []).map((mod: any) => ({
-        slug: mod.slug || String(mod.id),
-        title: mod.name,
-        description: mod.summary,
-        icon_url: mod.logo?.thumbnailUrl || null,
-        categories: (mod.categories || []).map((c: any) => c.name),
-        downloads: mod.downloadCount || 0,
-        followers: 0,
-        date_created: mod.dateCreated,
-        versions: [],
-        loaders: [],
-        game_versions: (mod.latestFiles?.[0]?.gameVersions || []),
-        latest_version: mod.latestFiles?.[0]
-          ? {
-              id: String(mod.latestFiles[0].id),
-              name: mod.latestFiles[0].displayName,
-              version_number: mod.latestFiles[0].fileName,
-              game_versions: mod.latestFiles[0].gameVersions || [],
-              loaders: [],
-              files: [{ url: mod.latestFiles[0].downloadUrl, size: mod.latestFiles[0].fileLength, filename: mod.latestFiles[0].fileName }],
-              date_published: mod.latestFiles[0].fileDate,
-              downloads: 0,
-              version_type: "release",
-            }
-          : null,
-      }));
-      setModpacks(hits);
+
+      const hits: ModpackItem[] = (data.data || []).map((mod: any) => {
+        // Extract loader names from latestFiles
+        const loaderTypes: string[] = [];
+        if (mod.latestFiles?.[0]?.gameVersions) {
+          for (const gv of mod.latestFiles[0].gameVersions) {
+            const lower = (gv || "").toLowerCase();
+            if (LOADERS.includes(lower)) loaderTypes.push(lower);
+          }
+        }
+
+        return {
+          slug: mod.slug || String(mod.id),
+          title: mod.name,
+          description: mod.summary,
+          icon_url: mod.logo?.thumbnailUrl || null,
+          categories: (mod.categories || []).map((c: any) => c.name),
+          downloads: mod.downloadCount || 0,
+          followers: mod.thumbsUpCount || 0,
+          date_created: mod.dateCreated,
+          game_versions: (mod.latestFilesIndexes || [])
+            .map((f: any) => f.gameVersion)
+            .filter((v: string) => v && /^\d/.test(v))
+            .slice(0, 5),
+          loaders: loaderTypes,
+          latest_version: mod.latestFiles?.[0]
+            ? {
+                id: String(mod.latestFiles[0].id),
+                name: mod.latestFiles[0].displayName,
+                version_number: mod.latestFiles[0].fileName,
+                game_versions: (mod.latestFiles[0].gameVersions || []).filter((v: string) => /^\d/.test(v)),
+                loaders: loaderTypes,
+                files: [{
+                  url: mod.latestFiles[0].downloadUrl,
+                  size: mod.latestFiles[0].fileLength,
+                  filename: mod.latestFiles[0].fileName,
+                }],
+                date_published: mod.latestFiles[0].fileDate,
+                downloads: 0,
+                version_type: "release",
+              }
+            : null,
+        };
+      });
+
+      if (providerRef.current === "curseforge") {
+        setModpacks(hits);
+      }
     } catch (err) {
-      setError("Erro ao carregar CurseForge. Verifique sua chave de API.");
+      if (providerRef.current === "curseforge") {
+        setError("Erro ao carregar CurseForge. Verifique sua chave de API.");
+      }
     } finally {
-      setLoading(false);
+      if (providerRef.current === "curseforge") {
+        setLoading(false);
+      }
     }
   };
+
+  // ── Fetch dispatcher ──────────────────────────────────────────────────
 
   const fetchModpacks = () => {
     if (provider === "modrinth") fetchModrinthModpacks();
@@ -244,7 +326,13 @@ export default function ModpacksContainer() {
   const saveCurseforgeKey = () => {
     localStorage.setItem("modpack_curseforge_key", curseforgeKey);
     setShowKeyInput(false);
-    fetchCurseforgeModpacks();
+    if (provider === "curseforge") fetchCurseforgeModpacks();
+  };
+
+  const switchProvider = (p: "modrinth" | "curseforge") => {
+    setProvider(p);
+    setModpacks([]);
+    setError(null);
   };
 
   return (
@@ -265,13 +353,13 @@ export default function ModpacksContainer() {
         <div className="flex items-center gap-2">
           <div className="flex bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
             <button
-              onClick={() => { setProvider("modrinth"); setModpacks([]); setError(null); }}
+              onClick={() => switchProvider("modrinth")}
               className={`px-4 py-2 text-sm font-medium transition-colors ${provider === "modrinth" ? "bg-green-600 text-white" : "text-gray-400 hover:text-white"}`}
             >
               Modrinth
             </button>
             <button
-              onClick={() => { setProvider("curseforge"); setModpacks([]); setError(null); }}
+              onClick={() => switchProvider("curseforge")}
               className={`px-4 py-2 text-sm font-medium transition-colors ${provider === "curseforge" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-white"}`}
             >
               CurseForge
@@ -420,7 +508,7 @@ export default function ModpacksContainer() {
               </div>
               <div className="flex items-center justify-between pt-3 border-t border-gray-700/50">
                 <div className="flex flex-col gap-0.5">
-                  {(modpack.game_versions || modpack.versions || []).slice(0, 1).map((v: string) => <span key={v} className="text-[10px] text-gray-500">MC {v}</span>)}
+                  {(modpack.game_versions || []).slice(0, 1).map((v: string) => <span key={v} className="text-[10px] text-gray-500">MC {v}</span>)}
                   {(modpack.loaders || []).slice(0, 1).map((l: string) => <span key={l} className="text-[10px] text-gray-500 capitalize">{l}</span>)}
                 </div>
                 <button
