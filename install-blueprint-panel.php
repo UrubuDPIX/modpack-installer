@@ -1,19 +1,35 @@
 <?php
-// Script para instalar o Modpack Installer Blueprint no Pterodactyl
+// Script para instalar o Modpack Installer Blueprint no Pterodactyl/Jexactyl
 
-require '/app/vendor/autoload.php';
-$app = require_once '/app/bootstrap/app.php';
+// Detecta diretorio do painel
+$panelDir = null;
+foreach (['/var/www/pterodactyl', '/var/www/jexactyl', '/var/www/panel', getcwd()] as $dir) {
+    if (file_exists($dir . '/vendor/autoload.php') && file_exists($dir . '/bootstrap/app.php')) {
+        $panelDir = $dir;
+        break;
+    }
+}
+
+if (!$panelDir) {
+    echo "ERRO: Nao foi possivel detectar o diretorio do painel!\n";
+    echo "Execute este script de dentro do diretorio do Pterodactyl/Jexactyl.\n";
+    exit(1);
+}
+
+require $panelDir . '/vendor/autoload.php';
+$app = require_once $panelDir . '/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
 echo "==============================================\n";
 echo "  Instalando Modpack Installer Blueprint\n";
+echo "  Painel detectado em: $panelDir\n";
 echo "==============================================\n\n";
 
 // 1. Verificar blueprint.json
-$blueprintPath = '/app/blueprint.json';
+$blueprintPath = $panelDir . '/blueprint.json';
 if (!file_exists($blueprintPath)) {
-    echo "ERRO: blueprint.json nao encontrado!\n";
+    echo "ERRO: blueprint.json nao encontrado em $blueprintPath!\n";
     exit(1);
 }
 
@@ -24,8 +40,8 @@ echo "Target: {$blueprint['target']}\n\n";
 // 2. Verificar estrutura
 echo "Verificando estrutura...\n";
 $required = [
-    '/app/client/index.tsx' => 'Client entrypoint',
-    '/app/server/index.ts' => 'Server entrypoint',
+    $panelDir . '/client/index.tsx' => 'Client entrypoint',
+    $panelDir . '/server/index.ts' => 'Server entrypoint',
 ];
 
 foreach ($required as $path => $desc) {
@@ -107,7 +123,8 @@ try {
     if (!$schema->hasTable('server_modpacks')) {
         $schema->create('server_modpacks', function ($table) {
             $table->id();
-            $table->foreignId('server_id')->constrained()->onDelete('cascade');
+            $table->unsignedBigInteger('server_id');
+            $table->index('server_id');
             $table->foreignId('modpack_id')->constrained();
             $table->foreignId('modpack_version_id')->constrained('modpack_versions');
             $table->string('status')->default('pending'); // pending, installing, installed, failed
@@ -126,18 +143,18 @@ try {
 
 // 5. Copiar assets para o frontend (integrar ao webpack/build)
 echo "\nIntegrando frontend...\n";
-echo "  ℹ Frontend blueprint disponivel em: /app/client/\n";
+echo "  ℹ Frontend blueprint disponivel em: {$panelDir}/client/\n";
 echo "  ℹ Para compilar: yarn run build:production\n";
 
 // Criar diretorio para o blueprint no resources
-$blueprintResourceDir = '/app/resources/scripts/blueprints/modpack-installer';
+$blueprintResourceDir = $panelDir . '/resources/scripts/blueprints/modpack-installer';
 if (!is_dir($blueprintResourceDir)) {
     mkdir($blueprintResourceDir, 0755, true);
 }
 
 // Copiar arquivos do cliente
-if (is_dir('/app/client')) {
-    shell_exec("cp -r /app/client/* $blueprintResourceDir/ 2>/dev/null");
+if (is_dir($panelDir . '/client')) {
+    shell_exec("cp -r " . $panelDir . "/client/* $blueprintResourceDir/ 2>/dev/null");
     echo "  ✓ Arquivos do cliente copiados\n";
 }
 

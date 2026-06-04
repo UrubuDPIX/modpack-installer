@@ -311,15 +311,36 @@ if (!\$schema->hasTable('modpack_versions')) {
 if (!\$schema->hasTable('server_modpacks')) {
     \$schema->create('server_modpacks', function (\$table) {
         \$table->id();
-        \$table->foreignId('server_id')->constrained()->onDelete('cascade');
-        \$table->foreignId('modpack_id')->constrained();
-        \$table->foreignId('modpack_version_id')->constrained('modpack_versions');
+        \$table->unsignedBigInteger('server_id');
+        \$table->unsignedBigInteger('modpack_id');
+        \$table->unsignedBigInteger('modpack_version_id')->nullable();
         \$table->string('status')->default('pending');
         \$table->text('install_log')->nullable();
         \$table->timestamp('installed_at')->nullable();
         \$table->timestamps();
+        \$table->index('server_id');
+        \$table->index('modpack_id');
     });
     echo 'Tabela server_modpacks criada' . PHP_EOL;
+}
+
+if (!\$schema->hasTable('modpack_settings')) {
+    \$schema->create('modpack_settings', function (\$table) {
+        \$table->id();
+        \$table->string('key')->unique();
+        \$table->text('value')->nullable();
+        \$table->timestamps();
+    });
+    echo 'Tabela modpack_settings criada' . PHP_EOL;
+    
+    // Insert defaults
+    DB::table('modpack_settings')->insert([
+        ['key' => 'curseforge_api_key', 'value' => '', 'created_at' => now(), 'updated_at' => now()],
+        ['key' => 'modrinth_enabled', 'value' => '1', 'created_at' => now(), 'updated_at' => now()],
+        ['key' => 'curseforge_enabled', 'value' => '0', 'created_at' => now(), 'updated_at' => now()],
+        ['key' => 'default_loader', 'value' => 'forge', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+    echo 'Configuracoes padrao inseridas' . PHP_EOL;
 }
 
 echo PHP_EOL . 'Tabelas configuradas!' . PHP_EOL;
@@ -335,32 +356,14 @@ register_permissions() {
     
     cd "$PANEL_DIR"
     
-    sudo -u www-data php -r "
-require '$PANEL_DIR/vendor/autoload.php';
-\$app = require_once '$PANEL_DIR/bootstrap/app.php';
-\$kernel = \$app->make(Illuminate\Contracts\Console\Kernel::class);
-\$kernel->bootstrap();
-
-\$permissions = [
-    ['permission' => 'modpacks.view', 'description' => 'Permite visualizar o instalador de modpacks'],
-    ['permission' => 'modpacks.install', 'description' => 'Permite instalar/reinstalar modpacks'],
-    ['permission' => 'modpacks.downgrade', 'description' => 'Permite fazer downgrade de modpacks'],
-];
-
-foreach (\$permissions as \$perm) {
-    \$exists = DB::table('permissions')->where('permission', \$perm['permission'])->first();
-    if (!\$exists) {
-        DB::table('permissions')->insert(array_merge(\$perm, [
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]));
-        echo '✓ ' . \$perm['permission'] . PHP_EOL;
-    } else {
-        echo 'ℹ ' . \$perm['permission'] . ' (já existe)' . PHP_EOL;
-    }
-}
-echo PHP_EOL . 'Permissões registradas!' . PHP_EOL;
-" || print_warning "Registro de permissões falhou"
+    # No Jexactyl, permissões são gerenciadas pelo Blueprint via blueprint.json
+    # Tenta registrar via Blueprint CLI se disponível
+    if sudo -u www-data php artisan list 2>/dev/null | grep -q "blueprint"; then
+        sudo -u www-data php artisan blueprint:install 2>/dev/null || true
+        print_success "Permissoes registradas via Blueprint"
+    else
+        print_info "Permissoes serao registradas automaticamente pelo Blueprint"
+    fi
 }
 
 # ============================================================================
@@ -377,6 +380,14 @@ build_frontend() {
         yarn install --frozen-lockfile || yarn install
         
         print_info "Compilando assets..."
+        
+        # Detecta Node.js v22+ e usa legacy OpenSSL provider
+        NODE_MAJOR=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+        if [ "$NODE_MAJOR" -ge 18 ]; then
+            export NODE_OPTIONS=--openssl-legacy-provider
+            print_info "Node.js v${NODE_MAJOR} detectado. Usando --openssl-legacy-provider"
+        fi
+        
         yarn run build:production || {
             print_warning "Build falhou. Tentando método alternativo..."
             yarn run build || npm run build 2>/dev/null || true
