@@ -239,7 +239,19 @@ install_blueprint() {
     print_info "Copiando arquivos..."
     cp "$TEMP_DIR/blueprint.json" "$blueprint_dir/"
     
-    [ -d "$TEMP_DIR/client" ] && cp -r "$TEMP_DIR/client" "$blueprint_dir/"
+    print_step "Integrando frontend..."
+    local res_scripts_dir="$PANEL_DIR/resources/scripts/blueprints/modpack-installer"
+    mkdir -p "$res_scripts_dir"
+    
+    if [ -d "$TEMP_DIR/client" ]; then
+        cp -r "$TEMP_DIR/client" "$blueprint_dir/"
+        # Copiar também para o local onde o Webpack compila (resources/scripts/blueprints)
+        cp -r "$TEMP_DIR/client" "$res_scripts_dir/"
+        print_info "Frontend blueprint copiado para: $res_scripts_dir/client/"
+        print_info "Para compilar: yarn run build:production"
+        print_success "Arquivos do cliente copiados"
+    fi
+    
     [ -d "$TEMP_DIR/server" ] && cp -r "$TEMP_DIR/server" "$blueprint_dir/"
     [ -d "$TEMP_DIR/prisma" ] && cp -r "$TEMP_DIR/prisma" "$blueprint_dir/"
     [ -d "$TEMP_DIR/database" ] && cp -r "$TEMP_DIR/database" "$blueprint_dir/"
