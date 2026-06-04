@@ -100,6 +100,14 @@ export default function ModpacksContainer() {
     if (saved) setCurseforgeKey(saved);
   }, []);
 
+  // Busca CurseForge automaticamente quando a chave é carregada
+  useEffect(() => {
+    if (provider === "curseforge" && curseforgeKey) {
+      fetchCurseforgeModpacks();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curseforgeKey]);
+
   // ── Modrinth ──────────────────────────────────────────────────────────
 
   const fetchModrinthModpacks = async () => {
@@ -319,8 +327,11 @@ export default function ModpacksContainer() {
   };
 
   useEffect(() => {
+    // Não busca CurseForge automaticamente se a chave ainda não foi carregada
+    if (provider === "curseforge" && !curseforgeKey) return;
     fetchModpacks();
     if (id) fetchInstalledModpack();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, provider, selectedCategory, selectedLoader, selectedVersion, sortBy]);
 
   const handleSearch = (e: React.FormEvent) => {
