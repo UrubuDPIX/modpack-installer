@@ -251,10 +251,14 @@ install_blueprint() {
     mkdir -p "$modpacks_dir"
     
     if [ -d "$TEMP_DIR/client/components" ]; then
-        cp -r "$TEMP_DIR/client/components/". "$modpacks_dir/"
+        cp -r "$TEMP_DIR/client/components/." "$modpacks_dir/"
     fi
     if [ -d "$TEMP_DIR/client/pages" ]; then
-        cp -r "$TEMP_DIR/client/pages/". "$modpacks_dir/"
+        cp -r "$TEMP_DIR/client/pages/." "$modpacks_dir/"
+    fi
+    # Copiar types/ (necessário para imports ./types nos componentes)
+    if [ -d "$TEMP_DIR/client/types" ]; then
+        cp -r "$TEMP_DIR/client/types/." "$modpacks_dir/"
     fi
     if [ -f "$TEMP_DIR/client/styles.css" ]; then
         cp "$TEMP_DIR/client/styles.css" "$modpacks_dir/"

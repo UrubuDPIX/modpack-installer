@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState } from "react";
-import { Modpack, ModpackVersion } from "../types";
+import { Modpack, ModpackVersion } from "./types";
 
 interface VersionSelectorProps {
   modpack: Modpack;

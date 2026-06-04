@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React from "react";
-import { Modpack, ModpackVersion } from "../types";
+import { Modpack, ModpackVersion } from "./types";
 
 interface InstallationModalProps {
   modpack: Modpack;

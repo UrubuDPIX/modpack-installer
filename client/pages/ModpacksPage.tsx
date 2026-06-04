@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React from 'react';
-import ModpacksContainer from '../components/ModpacksContainer';
+import ModpacksContainer from './ModpacksContainer';
 
 export default function ModpacksPage() {
     return (
