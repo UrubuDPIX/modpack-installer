@@ -122,32 +122,6 @@ if (fs.existsSync(serverElementsPath)) {
     console.log('✓ Injeção errada removida do ServerElements.tsx.');
 }
 
-// Adicionar a rota do Modpacks no routes.ts para que apareça automaticamente no nav
-if (fs.existsSync(routesTsPath)) {
-    let content = fs.readFileSync(routesTsPath, 'utf8');
-    if (!content.includes('/modpacks') && !content.includes('ModpacksPage')) {
-        // Adicionar import
-        const lastImportMatch = [...content.matchAll(/^import .+from .+;$/gm)].pop();
-        if (lastImportMatch) {
-            const importLine = "\nimport ModpacksPage from '@/blueprints/modpack-installer/client/pages/ModpacksPage';\n";
-            const idx = lastImportMatch.index + lastImportMatch[0].length;
-            content = content.slice(0, idx) + importLine + content.slice(idx);
-        }
-        // Adicionar objeto de rota na lista do servidor
-        const serverRoutesMatch = content.match(/server:\s*\[/);
-        if (serverRoutesMatch) {
-            const insertIdx = serverRoutesMatch.index + serverRoutesMatch[0].length;
-            const modpackRoute = `\n        {\n            path: '/modpacks',\n            name: 'Modpacks',\n            permission: null,\n            component: ModpacksPage,\n        },`;
-            content = content.slice(0, insertIdx) + modpackRoute + content.slice(insertIdx);
-            fs.writeFileSync(routesTsPath, content);
-            console.log('✓ Rota /modpacks adicionada no routes.ts (via server array).');
-        } else {
-            console.log('ℹ Array server: [] não encontrado - adicionar rota manualmente se necessário.');
-        }
-    } else {
-        console.log('ℹ Rota /modpacks já existe no routes.ts.');
-    }
-}
 
 console.log('\n✓ Limpeza concluída!');
 EOF
