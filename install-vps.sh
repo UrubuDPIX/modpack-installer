@@ -397,7 +397,7 @@ const serverRouterPath = path.join(panelDir, 'resources/scripts/routers/ServerRo
 if (fs.existsSync(serverRouterPath)) {
     let content = fs.readFileSync(serverRouterPath, 'utf8');
     
-    const importStatement = "import ModpacksPage from '@/blueprints/modpack-installer/client/pages/ModpacksPage';\n";
+    const importStatement = "import ModpacksPage from '@/blueprints/modpack-installer/pages/ModpacksPage';\n";
     if (!content.includes('ModpacksPage')) {
         // Encontrar os imports
         const lastImportMatch = [...content.matchAll(/^import .*;$/gm)].pop();

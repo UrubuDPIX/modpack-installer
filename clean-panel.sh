@@ -46,8 +46,21 @@ if (fs.existsSync(serverRouterPath)) {
     // Remover blocos de código que chamam os componentes deletados
     content = content.replace(/<Route[^>]*>[\s\S]*?(McModPacksContainer|McModpacksContainer|PluginsContainer)[\s\S]*?<\/Route>/g, '');
     
+    // Remover bloco antigo do modpack-installer caso ele tenha inserido errado com '/client/'
+    content = content.replace(/import ModpacksPage from '@\/blueprints\/modpack-installer\/client\/pages\/ModpacksPage';/g, '');
+    content = content.replace(/<Route path=\{`\$\{match\.path\}\/modpacks`\} exact>[\s\S]*?<ModpacksPage \/>[\s\S]*?<\/Route>/g, '');
+    
     fs.writeFileSync(serverRouterPath, content);
     console.log(`✓ Referências limpas no ServerRouter.tsx`);
+}
+
+// 3. Limpar routes.ts (Jexactyl)
+const routesTsPath = path.join(panelDir, 'resources/scripts/routers/routes.ts');
+if (fs.existsSync(routesTsPath)) {
+    let content = fs.readFileSync(routesTsPath, 'utf8');
+    content = content.split('\n').filter(line => !line.includes('mcmodpacks') && !line.includes('mcplugins')).join('\n');
+    fs.writeFileSync(routesTsPath, content);
+    console.log(`✓ Referências limpas no routes.ts`);
 }
 EOF
 
