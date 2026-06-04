@@ -433,7 +433,10 @@ const panelDir = process.argv[2];
   c = c.replace(/import ModpacksPage from '[^']+';?\n?/g, '');
   c = c.replace(/import ModpacksPage from "[^"]+";?\n?/g, '');
   c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
+  // Remove NavLink de modpacks se existir
+  c = c.replace(/<NavLink[^>]*to=\{`\$\{match\.url\}\/modpacks`\}[^>]*>[\s\S]*?<\/NavLink>\n?/g, '');
   c = c.replace(/\n{3,}/g, '\n\n');
+
   if (!c.includes('ModpacksPage')) {
     const imports = [...c.matchAll(/^import .*;$/gm)];
     if (imports.length) {
@@ -442,6 +445,8 @@ const panelDir = process.argv[2];
           "\nimport ModpacksPage from '@/components/server/modpacks/ModpacksPage';" +
           c.slice(lm.index + lm[0].length);
     }
+
+    // Injetar Route
     const fm = c.match(/<Route path=\{`\$\{match\.path\}\/files`\} exact>[\s\S]*?<\/Route>/);
     if (fm) {
       const ls = c.lastIndexOf('\n', fm.index) + 1;
@@ -453,6 +458,29 @@ const panelDir = process.argv[2];
       console.log('\u2713 Rota injetada no ServerRouter.tsx');
     } else {
       console.log('\u26a0 Rota /files nao encontrada no ServerRouter.tsx');
+    }
+
+    // Injetar NavLink na navegacao (depois de /files)
+    const navMatch = c.match(/<NavLink to=\{`\$\{match\.url\}\/files`\}>[\s\S]*?<\/NavLink>/);
+    if (navMatch) {
+      const ls = c.lastIndexOf('\n', navMatch.index) + 1;
+      const ind = (c.slice(ls, navMatch.index).match(/^(\s*)/) || ['',''])[1];
+      const inj = '\n' + ind + '<NavLink to={`${match.url}/modpacks`}>' +
+                  '\n' + ind + '    <FontAwesomeIcon icon={faBox} />' +
+                  '\n' + ind + '    Modpacks' +
+                  '\n' + ind + '</NavLink>';
+      c = c.slice(0, navMatch.index + navMatch[0].length) + inj + c.slice(navMatch.index + navMatch[0].length);
+
+      // Adicionar import do faBox se nao existir
+      if (!c.includes('faBox')) {
+        const faMatch = c.match(/import\s+\{[^}]*\}\s+from\s+['"]@fortawesome\/free-solid-svg-icons['"];?/);
+        if (faMatch) {
+          c = c.slice(0, faMatch.index) + faMatch[0].replace('{', '{ faBox, ') + c.slice(faMatch.index + faMatch[0].length);
+        }
+      }
+      console.log('\u2713 NavLink de Modpacks injetado no ServerRouter.tsx');
+    } else {
+      console.log('\u26a0 NavLink /files nao encontrado para injecao');
     }
   }
   c = c.replace(/\n{3,}/g, '\n\n');
