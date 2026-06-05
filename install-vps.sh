@@ -433,6 +433,7 @@ const panelDir = process.argv[2];
   c = c.replace(/import ModpacksPage from '[^']+';?\n?/g, '');
   c = c.replace(/import ModpacksPage from "[^"]+";?\n?/g, '');
   c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
+  c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpacks\/[^`]*`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
   // Remove NavLink de modpacks se existir
   c = c.replace(/<NavLink[^>]*to=\{`\$\{match\.url\}\/modpacks`\}[^>]*>[\s\S]*?<\/NavLink>\n?/g, '');
   c = c.replace(/\n{3,}/g, '\n\n');
@@ -443,6 +444,7 @@ const panelDir = process.argv[2];
       const lm = imports[imports.length - 1];
       c = c.slice(0, lm.index + lm[0].length) +
           "\nimport ModpacksPage from '@/components/server/modpacks/ModpacksPage';" +
+          "\nimport ModpackDetailsPage from '@/components/server/modpacks/ModpackDetailsPage';" +
           c.slice(lm.index + lm[0].length);
     }
 
@@ -478,6 +480,9 @@ const panelDir = process.argv[2];
       const ind = (c.slice(ls, fm.index).match(/^(\s*)/) || ['',''])[1];
       const inj = '\n' + ind + '<Route path={`${match.path}/modpacks`} exact>\n' +
                   ind + '    <ModpacksPage />\n' +
+                  ind + '</Route>\n' +
+                  ind + '<Route path={`${match.path}/modpacks/:slug`} exact>\n' +
+                  ind + '    <ModpackDetailsPage />\n' +
                   ind + '</Route>';
       c = c.slice(0, fm.index + fm[0].length) + inj + c.slice(fm.index + fm[0].length);
       console.log('\u2713 Rota injetada no ServerRouter.tsx');
