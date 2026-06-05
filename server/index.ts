@@ -10,7 +10,7 @@ const router = Router();
 export default function modpackInstallerAddon(app: any) {
   // Registra rotas
   app.use('/api/modpacks', modpackRoutes);
-  app.use('/api/servers', serverModpackRoutes);
+  app.use('/api/client/servers', serverModpackRoutes);
   app.use('/api/admin', adminSettingsRoutes);
 
   // Inicialização
