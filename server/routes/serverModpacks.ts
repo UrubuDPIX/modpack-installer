@@ -63,7 +63,7 @@ router.post('/:id/modpack', async (req, res) => {
       // Buscar projeto
       const projectRes = await fetch(`https://api.modrinth.com/v2/project/${modpack_slug}`);
       if (projectRes.ok) {
-        const project = await projectRes.json();
+        const project = await projectRes.json() as any;
         modpackName = project.title || modpack_slug;
         modpackAuthor = project.author || project.team || 'unknown';
         modpackDescription = project.description || '';
@@ -73,7 +73,7 @@ router.post('/:id/modpack', async (req, res) => {
       // Buscar versão
       const verRes = await fetch(`https://api.modrinth.com/v2/version/${version_id}`);
       if (verRes.ok) {
-        const ver = await verRes.json();
+        const ver = await verRes.json() as any;
         versionName = ver.name || version_id;
         minecraftVersion = ver.game_versions?.[0] || 'unknown';
         const rawLoader = ver.loaders?.[0] || 'Forge';
@@ -93,7 +93,7 @@ router.post('/:id/modpack', async (req, res) => {
         headers: { 'x-api-key': cfKey }
       });
       if (modRes.ok) {
-        const modData = await modRes.json();
+        const modData = await modRes.json() as any;
         const mod = modData.data;
         modpackName = mod.name || modpack_slug;
         modpackAuthor = mod.authors?.[0]?.name || 'unknown';
@@ -106,7 +106,7 @@ router.post('/:id/modpack', async (req, res) => {
         headers: { 'x-api-key': cfKey }
       });
       if (fileRes.ok) {
-        const fileData = await fileRes.json();
+        const fileData = await fileRes.json() as any;
         const file = fileData.data;
         versionName = file.displayName || version_id;
         minecraftVersion = file.gameVersions?.[0] || 'unknown';

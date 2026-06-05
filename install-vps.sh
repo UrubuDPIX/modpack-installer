@@ -728,6 +728,15 @@ EOF
     if [ ! -f "$nginx_conf" ]; then
         nginx_conf="/etc/nginx/sites-enabled/default"
     fi
+    if [ ! -f "$nginx_conf" ]; then
+        nginx_conf=$(find /etc/nginx/sites-enabled -maxdepth 1 -name "*.conf" -type f | head -n 1)
+    fi
+    if [ ! -f "$nginx_conf" ]; then
+        nginx_conf=$(find /etc/nginx/conf.d -maxdepth 1 -name "*.conf" -type f | head -n 1)
+    fi
+    if [ ! -f "$nginx_conf" ]; then
+        nginx_conf=$(find /etc/nginx -maxdepth 3 -name "*.conf" -type f -exec grep -l "server {" {} \; | head -n 1)
+    fi
     
     if [ -f "$nginx_conf" ]; then
         # Remove regras antigas do modpack-installer
