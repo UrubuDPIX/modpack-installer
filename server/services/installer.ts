@@ -66,6 +66,9 @@ async function processInstallation(
     // Diretório do servidor (exemplo - ajustar conforme estrutura Jexactyl)
     const serverDir = `/var/lib/pterodactyl/volumes/${serverId}`;
     
+    // Cria diretório se não existir
+    await fs.mkdir(serverDir, { recursive: true });
+    
     // Download do modpack
     log.push(`[${new Date().toISOString()}] Baixando modpack...`);
     const downloadPath = path.join(serverDir, 'modpack.zip');
