@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from "react";
-import { useHistory } from "react-router-dom";
+import { useHistory, useRouteMatch } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faDownload,
@@ -85,6 +85,7 @@ const CF_SORT_MAP: Record<string, number> = {
 
 export default function ModpacksContainer() {
   const history = useHistory();
+  const match = useRouteMatch();
   const id = ServerContext.useStoreState((state: any) => state.server.data?.uuid);
 
   const [provider, setProvider] = useState<"modrinth" | "curseforge">(() => {
@@ -573,7 +574,7 @@ export default function ModpacksContainer() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => history.push(`/modpacks/${modpack.slug}`)}
+                    onClick={() => history.push(`${match.url}/${modpack.slug}`)}
                     className="bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
                   >
                     <FontAwesomeIcon icon={faInfoCircle} className="text-[10px]" />
