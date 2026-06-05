@@ -413,35 +413,47 @@ export default function ModpackDetailsPage() {
                 versions.map((v) => (
                   <div
                     key={v.id}
-                    className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center justify-between hover:border-gray-600 transition-colors"
+                    className="bg-gray-800 border border-gray-700 rounded-xl p-4 hover:border-gray-600 transition-colors"
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-white font-medium truncate">{v.name || v.version_number}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {(v.game_versions || []).slice(0, 3).join(", ")} · {(v.loaders || []).join(", ")}
-                        {v.version_type && ` · ${v.version_type}`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                      {modpack.url && (
-                        <a
-                          href={modpack.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-white font-medium truncate">{v.name || v.version_number}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {formatDownloads(v.downloads)} downloads · Published {timeAgo(v.date_published)}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {(v.loaders || []).slice(0, 2).map((l: string) => (
+                            <span key={l} className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] capitalize">{l}</span>
+                          ))}
+                          {(v.game_versions || []).slice(0, 2).map((gv: string) => (
+                            <span key={gv} className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px]">{gv}</span>
+                          ))}
+                          {v.version_type && (
+                            <span className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] capitalize">{v.version_type}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                        {modpack.url && (
+                          <a
+                            href={modpack.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                          >
+                            <FontAwesomeIcon icon={faExternalLinkAlt} className="text-[10px]" />
+                            Website
+                          </a>
+                        )}
+                        <button
+                          onClick={() => openInstallModal(v.id)}
+                          disabled={!serverId || installingVersion === v.id}
+                          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
                         >
-                          <FontAwesomeIcon icon={faExternalLinkAlt} className="text-[10px]" />
-                          Website
-                        </a>
-                      )}
-                      <button
-                        onClick={() => openInstallModal(v.id)}
-                        disabled={!serverId || installingVersion === v.id}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
-                      >
-                        <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
-                        {installingVersion === v.id ? "..." : "Install"}
-                      </button>
+                          <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
+                          {installingVersion === v.id ? "..." : "Install"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))
