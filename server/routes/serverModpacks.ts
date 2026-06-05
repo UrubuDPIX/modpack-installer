@@ -6,7 +6,7 @@ const router = Router({ mergeParams: true });
 
 async function getCurseForgeKey(): Promise<string | null> {
   try {
-    const result: any = await prisma.$queryRaw`SELECT value FROM modpack_settings WHERE key = 'curseforge_api_key' LIMIT 1`;
+    const result: any = await prisma.$queryRaw`SELECT value FROM modpack_settings WHERE \`key\` = 'curseforge_api_key' LIMIT 1`;
     return result?.[0]?.value || null;
   } catch {
     return null;
