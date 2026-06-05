@@ -273,6 +273,8 @@ install_blueprint() {
     [ -d "$TEMP_DIR/server" ] && cp -r "$TEMP_DIR/server" "$blueprint_dir/"
     [ -d "$TEMP_DIR/prisma" ] && cp -r "$TEMP_DIR/prisma" "$blueprint_dir/"
     [ -d "$TEMP_DIR/database" ] && cp -r "$TEMP_DIR/database" "$blueprint_dir/"
+    [ -f "$TEMP_DIR/package.json" ] && cp "$TEMP_DIR/package.json" "$blueprint_dir/"
+    [ -f "$TEMP_DIR/tsconfig.json" ] && cp "$TEMP_DIR/tsconfig.json" "$blueprint_dir/"
     
     # Copia scripts de instalação
     [ -f "$TEMP_DIR/install-blueprint-panel.php" ] && cp "$TEMP_DIR/install-blueprint-panel.php" "$PANEL_DIR/"

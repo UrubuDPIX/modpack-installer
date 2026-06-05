@@ -605,69 +605,71 @@ export default function ModpacksContainer() {
           <p className="text-sm text-gray-500">Tente ajustar os filtros ou termos de busca.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {modpacks.map((modpack) => (
-            <div key={modpack.slug} className="bg-gray-800 border border-gray-700 rounded-xl p-4 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/10 transition-all group">
-              <div className="flex items-start gap-3 mb-3">
-                <img src={modpack.icon_url || "/default-modpack.png"} alt={modpack.title} className="w-12 h-12 rounded-lg object-cover border border-gray-600 flex-shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} />
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors">{modpack.title}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">{formatDownloads(modpack.downloads)} downloads</p>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {modpacks.map((modpack) => (
+              <div key={modpack.slug} className="bg-gray-800 border border-gray-700 rounded-xl p-4 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/10 transition-all group">
+                <div className="flex items-start gap-3 mb-3">
+                  <img src={modpack.icon_url || "/default-modpack.png"} alt={modpack.title} className="w-12 h-12 rounded-lg object-cover border border-gray-600 flex-shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors">{modpack.title}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">{formatDownloads(modpack.downloads)} downloads</p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 line-clamp-2 mb-3 h-8">{modpack.description}</p>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {(modpack.categories || []).slice(0, 3).map((cat: string) => (
+                    <span key={cat} className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] uppercase tracking-wide">{cat}</span>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between pt-3 border-t border-gray-700/50">
+                  <div className="flex flex-col gap-0.5">
+                    {(modpack.game_versions || []).slice(0, 1).map((v: string) => <span key={v} className="text-[10px] text-gray-500">MC {v}</span>)}
+                    {(modpack.loaders || []).slice(0, 1).map((l: string) => <span key={l} className="text-[10px] text-gray-500 capitalize">{l}</span>)}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const detailsSlug = provider === "curseforge" ? String(modpack.id) : modpack.slug;
+                        history.push(`${match.url}/${detailsSlug}?provider=${provider}`);
+                      }}
+                      className="bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                    >
+                      <FontAwesomeIcon icon={faInfoCircle} className="text-[10px]" />
+                      Details
+                    </button>
+                    <button
+                      onClick={() => openInstallModal(modpack)}
+                      disabled={!modpack.latest_version || !id}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                    >
+                      <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
+                      Install
+                    </button>
+                  </div>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 line-clamp-2 mb-3 h-8">{modpack.description}</p>
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {(modpack.categories || []).slice(0, 3).map((cat: string) => (
-                  <span key={cat} className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] uppercase tracking-wide">{cat}</span>
-                ))}
-              </div>
-              <div className="flex items-center justify-between pt-3 border-t border-gray-700/50">
-                <div className="flex flex-col gap-0.5">
-                  {(modpack.game_versions || []).slice(0, 1).map((v: string) => <span key={v} className="text-[10px] text-gray-500">MC {v}</span>)}
-                  {(modpack.loaders || []).slice(0, 1).map((l: string) => <span key={l} className="text-[10px] text-gray-500 capitalize">{l}</span>)}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const detailsSlug = provider === "curseforge" ? String(modpack.id) : modpack.slug;
-                      history.push(`${match.url}/${detailsSlug}?provider=${provider}`);
-                    }}
-                    className="bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
-                  >
-                    <FontAwesomeIcon icon={faInfoCircle} className="text-[10px]" />
-                    Details
-                  </button>
-                  <button
-                    onClick={() => openInstallModal(modpack)}
-                    disabled={!modpack.latest_version || !id}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
-                  >
-                    <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
-                    Install
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        {hasMore && (
-          <div className="flex justify-center mt-6">
-            <button
-              onClick={loadMore}
-              disabled={loadingMore}
-              className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white px-6 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-            >
-              {loadingMore ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                  Carregando...
-                </>
-              ) : (
-                <>Carregar mais modpacks</>
-              )}
-            </button>
+            ))}
           </div>
-        )}
+          {hasMore && (
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white px-6 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+              >
+                {loadingMore ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                    Carregando...
+                  </>
+                ) : (
+                  <>Carregar mais modpacks</>
+                )}
+              </button>
+            </div>
+          )}
+        </>
       )}
 
     </div>
