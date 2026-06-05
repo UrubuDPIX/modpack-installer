@@ -432,6 +432,8 @@ const panelDir = process.argv[2];
   let c = fs.readFileSync(srPath, 'utf8');
   c = c.replace(/import ModpacksPage from '[^']+';?\n?/g, '');
   c = c.replace(/import ModpacksPage from "[^"]+";?\n?/g, '');
+  c = c.replace(/import ModpackDetailsPage from '[^']+';?\n?/g, '');
+  c = c.replace(/import ModpackDetailsPage from "[^"]+";?\n?/g, '');
   c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpacks`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
   c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpacks\/[^`]*`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
   // Remove NavLink de modpacks se existir
