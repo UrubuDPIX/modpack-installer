@@ -17,20 +17,26 @@ async function getCurseForgeKey(): Promise<string | null> {
 router.get('/:id/modpack', async (req, res) => {
   try {
     const serverModpack = await prisma.serverModpack.findFirst({
-      where: { serverId: req.params.id },
-      include: {
-        modpack: {
-          include: { versions: true }
-        },
-        version: true
-      }
+      where: { serverId: req.params.id }
     });
 
     if (!serverModpack) {
       return res.status(404).json({ message: 'Nenhum modpack instalado' });
     }
 
-    res.json(serverModpack);
+    // Busca dados do modpack e versão separadamente para evitar erro de FK
+    const modpack = await prisma.modpack.findUnique({
+      where: { id: serverModpack.modpackId }
+    });
+    const version = await prisma.modpackVersion.findUnique({
+      where: { id: serverModpack.versionId }
+    });
+
+    res.json({
+      ...serverModpack,
+      modpack: modpack || null,
+      version: version || null
+    });
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar modpack do servidor', error });
   }
