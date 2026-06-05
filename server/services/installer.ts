@@ -93,8 +93,9 @@ async function processInstallation(
       await execAsync(`cp -r ${overridesDir}/* ${serverDir}/ && rm -rf ${overridesDir}`);
     }
     
-    // Configurações específicas do loader
-    await configureLoader(serverDir, version);
+    // Configurações específicas do loader (usa modloader do modpack)
+    const loaderType = version.modpack?.modloader || version.loader || 'Forge';
+    await configureLoader(serverDir, { ...version, loader: loaderType });
     
     // Restaura mundo se existir backup
     if (await directoryExists(worldBackup)) {
