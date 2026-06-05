@@ -66,6 +66,7 @@ export default function ModpackDetailsPage() {
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [installVersionId, setInstallVersionId] = useState<string | null>(null);
+  const [installModalMode, setInstallModalMode] = useState<"select" | "fixed">("select");
   const [deleteServerFiles, setDeleteServerFiles] = useState(false);
   const [acceptEula, setAcceptEula] = useState(false);
 
@@ -87,6 +88,7 @@ export default function ModpackDetailsPage() {
 
   const openInstallModal = (versionId?: string | null) => {
     setInstallVersionId(versionId || null);
+    setInstallModalMode(versionId ? "fixed" : "select");
     setDeleteServerFiles(false);
     setAcceptEula(false);
     setShowInstallModal(true);
@@ -557,7 +559,7 @@ export default function ModpackDetailsPage() {
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Select Version</h3>
               {(() => {
                 const v = versions.find((ver) => ver.id === installVersionId);
-                if (v) {
+                if (installModalMode === "fixed" && v) {
                   return (
                     <div className="bg-gray-700/50 border border-gray-600 rounded-lg p-3">
                       <p className="text-sm text-white font-medium">{v.name || v.version_number}</p>
