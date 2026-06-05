@@ -96,8 +96,9 @@ router.post('/:id/modpack', async (req, res) => {
 
       versionName = ver.name || version_id;
       minecraftVersion = ver.game_versions?.[0] || 'unknown';
-      const rawLoader = ver.loaders?.[0] || 'Forge';
-      loader = ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(rawLoader) ? rawLoader : 'Forge';
+      const rawLoader = (ver.loaders?.[0] || 'Forge').toLowerCase();
+      const capitalizedLoader = rawLoader.charAt(0).toUpperCase() + rawLoader.slice(1);
+      loader = ['Forge', 'Fabric', 'Neoforge', 'Quilt'].includes(capitalizedLoader) ? capitalizedLoader : 'Forge';
       loaderVersion = ver.loaders?.[0] || 'unknown';
       downloadUrl = ver.files?.[0]?.url || '';
       fileSize = String(ver.files?.[0]?.size || 0);
