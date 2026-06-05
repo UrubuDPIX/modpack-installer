@@ -144,11 +144,18 @@ export async function uninstallModpack(serverId: string): Promise<void> {
 }
 
 async function downloadFile(url: string, dest: string): Promise<void> {
+  console.log(`[Download] URL: ${url}`);
   const response = await fetch(url);
+  console.log(`[Download] Status: ${response.status}`);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   
   const buffer = await response.arrayBuffer();
+  console.log(`[Download] Tamanho: ${buffer.byteLength} bytes`);
   await fs.writeFile(dest, Buffer.from(buffer));
+  
+  // Verifica se arquivo foi salvo
+  const stats = await fs.stat(dest);
+  console.log(`[Download] Arquivo salvo: ${dest} (${stats.size} bytes)`);
 }
 
 async function cleanServerDirectory(serverDir: string): Promise<void> {
