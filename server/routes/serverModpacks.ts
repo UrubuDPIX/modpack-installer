@@ -67,27 +67,41 @@ router.post('/:id/modpack', async (req, res) => {
     if (provider === 'modrinth') {
       // Buscar projeto
       const projectRes = await fetch(`https://api.modrinth.com/v2/project/${modpack_slug}`);
-      if (projectRes.ok) {
-        const project = await projectRes.json() as any;
-        modpackName = project.title || modpack_slug;
-        modpackAuthor = project.author || project.team || 'unknown';
-        modpackDescription = project.description || '';
-        modpackIcon = project.icon_url || '';
-        modpackDownloads = project.downloads || 0;
+      if (!projectRes.ok) {
+        return res.status(400).json({ message: `Modpack ${modpack_slug} não encontrado no Modrinth` });
       }
-      // Buscar versão
-      const verRes = await fetch(`https://api.modrinth.com/v2/version/${version_id}`);
-      if (verRes.ok) {
-        const ver = await verRes.json() as any;
-        versionName = ver.name || version_id;
-        minecraftVersion = ver.game_versions?.[0] || 'unknown';
-        const rawLoader = ver.loaders?.[0] || 'Forge';
-        loader = ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(rawLoader) ? rawLoader : 'Forge';
-        loaderVersion = ver.loaders?.[0] || 'unknown';
-        downloadUrl = ver.files?.[0]?.url || '';
-        fileSize = String(ver.files?.[0]?.size || 0);
-        releasedAt = new Date(ver.date_published) || new Date();
+      const project = await projectRes.json() as any;
+      modpackName = project.title || modpack_slug;
+      modpackAuthor = project.author || project.team || 'unknown';
+      modpackDescription = project.description || '';
+      modpackIcon = project.icon_url || '';
+      modpackDownloads = project.downloads || 0;
+
+      // Buscar versões disponíveis
+      const versionsRes = await fetch(`https://api.modrinth.com/v2/project/${modpack_slug}/version`);
+      if (!versionsRes.ok) {
+        return res.status(400).json({ message: 'Não foi possível buscar versões do modpack' });
       }
+      const versions = await versionsRes.json() as any[];
+      if (!versions || versions.length === 0) {
+        return res.status(400).json({ message: 'Nenhuma versão disponível para este modpack' });
+      }
+
+      // Se version_id for "latest", pega a primeira (mais recente)
+      let ver = versions[0];
+      if (version_id !== 'latest') {
+        const specificVer = versions.find((v: any) => v.id === version_id || v.name === version_id);
+        if (specificVer) ver = specificVer;
+      }
+
+      versionName = ver.name || version_id;
+      minecraftVersion = ver.game_versions?.[0] || 'unknown';
+      const rawLoader = ver.loaders?.[0] || 'Forge';
+      loader = ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(rawLoader) ? rawLoader : 'Forge';
+      loaderVersion = ver.loaders?.[0] || 'unknown';
+      downloadUrl = ver.files?.[0]?.url || '';
+      fileSize = String(ver.files?.[0]?.size || 0);
+      releasedAt = new Date(ver.date_published) || new Date();
     } else if (provider === 'curseforge') {
       const cfKey = await getCurseForgeKey();
       if (!cfKey) {
