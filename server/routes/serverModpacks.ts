@@ -17,19 +17,18 @@ async function getCurseForgeKey(): Promise<string | null> {
 router.get('/:id/modpack', async (req, res) => {
   try {
     const serverModpack = await prisma.serverModpack.findFirst({
-      where: { serverId: req.params.id }
+      where: { server_id: BigInt(req.params.id) }
     });
 
     if (!serverModpack) {
       return res.status(404).json({ message: 'Nenhum modpack instalado' });
     }
 
-    // Busca dados do modpack e versão separadamente para evitar erro de FK
     const modpack = await prisma.modpack.findUnique({
-      where: { id: serverModpack.modpackId }
+      where: { id: serverModpack.modpack_id }
     });
     const version = await prisma.modpackVersion.findUnique({
-      where: { id: serverModpack.versionId }
+      where: { id: serverModpack.modpack_version_id }
     });
 
     res.json({
@@ -159,34 +158,28 @@ router.post('/:id/modpack', async (req, res) => {
     // Criar ou atualizar versão no banco
     let modpackVersion = await prisma.modpackVersion.findFirst({
       where: {
-        modpackId: modpack.id,
-        name: versionName
+        modpack_id: modpack.id,
+        version: versionName
       }
     });
 
     if (!modpackVersion) {
       modpackVersion = await prisma.modpackVersion.create({
         data: {
-          modpackId: modpack.id,
-          name: versionName,
-          minecraftVersion,
-          loader,
-          loaderVersion,
-          size: fileSize,
-          downloadUrl,
-          releasedAt
+          modpack_id: modpack.id,
+          version: versionName,
+          download_url: downloadUrl,
+          file_size: fileSize ? BigInt(fileSize) : null,
+          is_recommended: 1
         }
       });
     } else {
       modpackVersion = await prisma.modpackVersion.update({
         where: { id: modpackVersion.id },
         data: {
-          minecraftVersion,
-          loader,
-          loaderVersion,
-          size: fileSize,
-          downloadUrl,
-          releasedAt
+          download_url: downloadUrl,
+          file_size: fileSize ? BigInt(fileSize) : null,
+          is_recommended: 1
         }
       });
     }
@@ -194,11 +187,11 @@ router.post('/:id/modpack', async (req, res) => {
     // Limpa instalação anterior se delete_files = true
     if (delete_files) {
       await prisma.serverModpack.deleteMany({
-        where: { serverId }
+        where: { server_id: BigInt(serverId) }
       });
     }
 
-    const result = await installModpack(serverId, modpack.id, modpackVersion.id, 'install');
+    const result = await installModpack(serverId, String(modpack.id), String(modpackVersion.id), 'install');
     res.json({ success: true, message: 'Instalação iniciada', jobId: result.jobId });
   } catch (error: any) {
     console.error('[Modpack Installer] Erro ao instalar modpack:', error);
