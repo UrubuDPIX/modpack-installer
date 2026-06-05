@@ -330,7 +330,17 @@ export default function ModpackDetailsPage() {
               {/* Body */}
               <div
                 className="text-sm text-gray-300 leading-relaxed prose prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: modpack.body.replace(/\n/g, "<br/>") }}
+                dangerouslySetInnerHTML={{
+                  __html: modpack.body
+                    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+                    .replace(/<iframe[^>]*src="([^"]*)"[^>]*>[\s\S]*?<\/iframe>/gi, (match: string, src: string) => {
+                      const yt = src.match(/(?:youtube\.com\/embed\/|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+                      if (yt) return `<div class="my-3"><a href="https://youtube.com/watch?v=${yt[1]}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline flex items-center gap-2"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>Assistir vídeo no YouTube</a></div>`;
+                      return "";
+                    })
+                    .replace(/<a\s/g, '<a target="_blank" rel="noopener noreferrer" ')
+                    .replace(/\n/g, "<br/>"),
+                }}
               />
             </div>
           ) : (
