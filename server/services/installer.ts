@@ -27,19 +27,18 @@ export async function installModpack(
   }
 
   // Converte IDs de forma segura
-  const serverIdNum = !isNaN(Number(serverId)) ? BigInt(serverId) : BigInt(0);
   const modpackIdNum = !isNaN(Number(modpackId)) ? BigInt(modpackId) : BigInt(0);
   const versionIdNum = !isNaN(Number(versionId)) ? BigInt(versionId) : BigInt(0);
 
   // Limpa instalação anterior
   await prisma.serverModpack.deleteMany({
-    where: { server_id: serverIdNum }
+    where: { server_id: serverId }
   });
 
   // Cria novo registro
   const serverModpack = await prisma.serverModpack.create({
     data: {
-      server_id: serverIdNum,
+      server_id: serverId,
       modpack_id: modpackIdNum,
       modpack_version_id: versionIdNum,
       status: 'installing',
@@ -60,7 +59,6 @@ async function processInstallation(
   version: any
 ) {
   const log: string[] = [];
-  const serverIdNum = !isNaN(Number(serverId)) ? BigInt(serverId) : BigInt(0);
   
   try {
     log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.version}`);
@@ -104,7 +102,7 @@ async function processInstallation(
     
     // Atualiza status
     const record = await prisma.serverModpack.findFirst({
-      where: { server_id: serverIdNum }
+      where: { server_id: serverId }
     });
     if (record) {
       await prisma.serverModpack.update({
@@ -121,7 +119,7 @@ async function processInstallation(
     log.push(`[${new Date().toISOString()}] ERRO: ${error}`);
     
     const record = await prisma.serverModpack.findFirst({
-      where: { server_id: serverIdNum }
+      where: { server_id: serverId }
     });
     if (record) {
       await prisma.serverModpack.update({
@@ -137,9 +135,8 @@ async function processInstallation(
 }
 
 export async function uninstallModpack(serverId: string): Promise<void> {
-  const serverIdNum = !isNaN(Number(serverId)) ? BigInt(serverId) : BigInt(0);
   await prisma.serverModpack.deleteMany({
-    where: { server_id: serverIdNum }
+    where: { server_id: serverId }
   });
 }
 

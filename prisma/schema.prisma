@@ -8,74 +8,66 @@ datasource db {
 }
 
 model Modpack {
-  id          String           @id @default(uuid())
-  name        String
-  author      String
-  description String?          @db.Text
-  icon        String?          @db.VarChar(500)
-  downloads   Int              @default(0)
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-  versions    ModpackVersion[]
-  servers     ServerModpack[]
+  id                BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  name              String   @db.VarChar(191)
+  slug              String   @unique @db.VarChar(191)
+  description       String?  @db.Text
+  icon              String?  @db.VarChar(191)
+  source            String   @default("modrinth") @db.VarChar(191)
+  source_id         String?  @db.VarChar(191)
+  minecraft_version String   @db.VarChar(191)
+  modloader         String   @db.VarChar(191)
+  is_active         Int      @default(1) @db.TinyInt
+  created_at        DateTime? @db.Timestamp(0)
+  updated_at        DateTime? @db.Timestamp(0)
+
+  versions ModpackVersion[]
+  servers  ServerModpack[]
 
   @@map("modpacks")
 }
 
 model ModpackVersion {
-  id               String    @id @default(uuid())
-  modpackId        String    @map("modpack_id")
-  name             String    @db.VarChar(100)
-  minecraftVersion String    @map("minecraft_version") @db.VarChar(50)
-  loader           Loader
-  loaderVersion    String    @map("loader_version") @db.VarChar(50)
-  size             String    @db.VarChar(20)
-  downloadUrl      String    @map("download_url") @db.VarChar(500)
-  isServerPack     Boolean   @default(true) @map("is_server_pack")
-  isRelease        Boolean   @default(true) @map("is_release")
-  changelog        String?   @db.Text
-  releasedAt       DateTime  @map("released_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  modpack          Modpack   @relation(fields: [modpackId], references: [id], onDelete: Cascade)
-  servers          ServerModpack[]
+  id             BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  modpack_id     BigInt   @db.UnsignedBigInt
+  version        String   @db.VarChar(191)
+  download_url   String   @db.VarChar(191)
+  file_size      BigInt?  @db.BigInt
+  checksum       String?  @db.VarChar(191)
+  is_recommended Int      @default(0) @db.TinyInt
+  created_at     DateTime? @db.Timestamp(0)
+  updated_at     DateTime? @db.Timestamp(0)
+
+  modpack Modpack        @relation(fields: [modpack_id], references: [id])
+  servers ServerModpack[]
 
   @@map("modpack_versions")
 }
 
 model ServerModpack {
-  id          String           @id @default(uuid())
-  serverId    String           @unique @map("server_id")
-  modpackId   String           @map("modpack_id")
-  versionId   String           @map("version_id")
-  status      InstallStatus    @default(installing)
-  installLog  String?          @map("install_log") @db.Text
-  installedAt DateTime         @default(now()) @map("installed_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-  modpack     Modpack          @relation(fields: [modpackId], references: [id], onDelete: Cascade)
-  version     ModpackVersion   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  id                 BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  server_id          String   @db.VarChar(36)
+  modpack_id         BigInt   @db.UnsignedBigInt
+  modpack_version_id BigInt   @db.UnsignedBigInt
+  status             String   @default("pending") @db.VarChar(191)
+  install_log        String?  @db.Text
+  installed_at       DateTime? @db.Timestamp(0)
+  created_at         DateTime? @db.Timestamp(0)
+  updated_at         DateTime? @db.Timestamp(0)
 
+  modpack Modpack        @relation(fields: [modpack_id], references: [id])
+  version ModpackVersion @relation(fields: [modpack_version_id], references: [id])
+
+  @@unique([server_id])
   @@map("server_modpacks")
 }
 
-enum Loader {
-  Forge
-  Fabric
-  NeoForge
-  Quilt
-}
-
-enum InstallStatus {
-  installing
-  installed
-  error
-}
-
 model ModpackSettings {
-  id        String   @id @default(uuid())
-  key       String   @unique @db.VarChar(255)
-  value     String?  @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(uuid())
+  key        String   @unique @db.VarChar(255)
+  value      String?  @db.Text
+  created_at DateTime @default(now()) @db.Timestamp(0)
+  updated_at DateTime @updatedAt @db.Timestamp(0)
 
   @@map("modpack_settings")
 }

@@ -17,7 +17,7 @@ async function getCurseForgeKey(): Promise<string | null> {
 router.get('/:id/modpack', async (req, res) => {
   try {
     const serverModpack = await prisma.serverModpack.findFirst({
-      where: { server_id: BigInt(req.params.id) }
+      where: { server_id: req.params.id }
     });
 
     if (!serverModpack) {
@@ -208,7 +208,7 @@ router.post('/:id/modpack', async (req, res) => {
     // Limpa instalação anterior se delete_files = true
     if (delete_files) {
       await prisma.serverModpack.deleteMany({
-        where: { server_id: BigInt(serverId) }
+        where: { server_id: serverId }
       });
     }
 
