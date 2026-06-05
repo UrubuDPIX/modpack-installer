@@ -3,8 +3,6 @@ import React, { useEffect, useState } from "react";
 import { useParams, useHistory } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-  faDownload,
-  faBox,
   faCheck,
   faExclamationTriangle,
   faArrowLeft,
@@ -14,8 +12,6 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 // @ts-ignore
 import PageContentBlock from "@/components/elements/PageContentBlock";
-// @ts-ignore
-import ServerContext from "@/state/server/ServerContext";
 
 const LOADERS = ["fabric", "forge", "quilt", "neoforge", "liteloader", "rift", "modloader"];
 const MINECRAFT_VERSIONS = [
@@ -57,7 +53,6 @@ interface ModpackDetail {
 export default function ModpackDetailsPage() {
   const { slug } = useParams<{ slug: string }>();
   const history = useHistory();
-  const serverId = ServerContext.useStoreState((state: any) => state.server.data?.uuid);
 
   const [modpack, setModpack] = useState<ModpackDetail | null>(null);
   const [versions, setVersions] = useState<ModpackVersion[]>([]);
@@ -65,7 +60,6 @@ export default function ModpackDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"description" | "versions">("description");
   const [provider, setProvider] = useState<"modrinth" | "curseforge">("modrinth");
-  const [installing, setInstalling] = useState(false);
 
   const curseforgeKey = localStorage.getItem("modpack_curseforge_key") || "";
 
@@ -203,24 +197,6 @@ export default function ModpackDetailsPage() {
     }
   };
 
-  const installVersion = async (versionId: string) => {
-    if (!serverId || !modpack) return;
-    setInstalling(true);
-    try {
-      const response = await fetch(`/api/client/servers/${serverId}/modpack`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modpack_slug: modpack.slug, version_id: versionId, provider }),
-      });
-      if (!response.ok) throw new Error();
-      alert("Modpack agendado para instalação!");
-    } catch {
-      alert("Erro ao instalar modpack");
-    } finally {
-      setInstalling(false);
-    }
-  };
-
   const formatDownloads = (n?: number | null) => {
     if (!n) return "0";
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -306,14 +282,6 @@ export default function ModpackDetailsPage() {
                     Website
                   </a>
                 )}
-                <button
-                  onClick={() => modpack.latest_version && installVersion(modpack.latest_version.id)}
-                  disabled={!modpack.latest_version || !serverId || installing}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                >
-                  <FontAwesomeIcon icon={installing ? faBox : faDownload} className="text-xs" />
-                  {installing ? "Installing..." : "Install"}
-                </button>
               </div>
             </div>
           </div>
@@ -382,14 +350,6 @@ export default function ModpackDetailsPage() {
                         {v.version_type && ` · ${v.version_type}`}
                       </p>
                     </div>
-                    <button
-                      onClick={() => installVersion(v.id)}
-                      disabled={!serverId || installing}
-                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ml-3 flex-shrink-0"
-                    >
-                      <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
-                      Install
-                    </button>
                   </div>
                 ))
               )}
