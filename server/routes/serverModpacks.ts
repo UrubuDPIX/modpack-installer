@@ -13,7 +13,7 @@ async function getCurseForgeKey(): Promise<string | null> {
   }
 }
 
-// Busca modpack instalado no servidor
+// Busca modpack instalado no servidor - v2 fix schema
 router.get('/:id/modpack', async (req, res) => {
   try {
     const serverModpack = await prisma.serverModpack.findFirst({
