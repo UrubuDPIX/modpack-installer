@@ -69,6 +69,10 @@ async function processInstallation(
     // Cria diretório se não existir
     await fs.mkdir(serverDir, { recursive: true });
     
+    // Limpa arquivos antigos (antes de baixar)
+    log.push(`[${new Date().toISOString()}] Limpando instalação anterior...`);
+    await cleanServerDirectory(serverDir);
+    
     // Download do modpack
     log.push(`[${new Date().toISOString()}] Baixando modpack...`);
     const downloadPath = path.join(serverDir, 'modpack.zip');
@@ -78,10 +82,6 @@ async function processInstallation(
     // Backup se necessário
     const worldBackup = path.join(serverDir, 'world_backup');
     await execAsync(`cp -r ${path.join(serverDir, 'world')} ${worldBackup}`).catch(() => {});
-    
-    // Limpa arquivos antigos
-    log.push(`[${new Date().toISOString()}] Limpando instalação anterior...`);
-    await cleanServerDirectory(serverDir);
     
     // Extrai modpack
     log.push(`[${new Date().toISOString()}] Extraindo arquivos...`);
