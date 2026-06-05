@@ -85,8 +85,8 @@ export default function ModpackDetailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, provider]);
 
-  const openInstallModal = (versionId: string) => {
-    setInstallVersionId(versionId);
+  const openInstallModal = (versionId?: string | null) => {
+    setInstallVersionId(versionId || null);
     setDeleteServerFiles(false);
     setAcceptEula(false);
     setShowInstallModal(true);
@@ -335,12 +335,12 @@ export default function ModpackDetailsPage() {
                   </a>
                 )}
                 <button
-                  onClick={() => modpack.latest_version && openInstallModal(modpack.latest_version.id)}
-                  disabled={!modpack.latest_version || !serverId || installingVersion === modpack.latest_version?.id}
+                  onClick={() => openInstallModal(null)}
+                  disabled={!serverId || !!installingVersion}
                   className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
                 >
                   <FontAwesomeIcon icon={faDownload} className="text-xs" />
-                  {installingVersion === modpack.latest_version?.id ? "Installing..." : "Install"}
+                  {installingVersion ? "Installing..." : "Install"}
                 </button>
               </div>
             </div>
@@ -529,7 +529,7 @@ export default function ModpackDetailsPage() {
     </PageContentBlock>
 
     {/* Install Modal */}
-    {showInstallModal && installVersionId && (
+    {showInstallModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
         <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
           {/* Header */}
@@ -544,6 +544,9 @@ export default function ModpackDetailsPage() {
               <p className="text-sm text-gray-400 mt-1">
                 {formatDownloads(modpack?.downloads || 0)} downloads
               </p>
+              {modpack?.description && (
+                <p className="text-sm text-gray-500 mt-2 line-clamp-2">{modpack.description}</p>
+              )}
             </div>
           </div>
 
@@ -554,15 +557,32 @@ export default function ModpackDetailsPage() {
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Select Version</h3>
               {(() => {
                 const v = versions.find((ver) => ver.id === installVersionId);
-                return v ? (
-                  <div className="bg-gray-700/50 border border-gray-600 rounded-lg p-3">
-                    <p className="text-sm text-white font-medium">{v.name || v.version_number}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {(v.game_versions || []).slice(0, 3).join(", ")} · {(v.loaders || []).join(", ")}
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">Version not found</p>
+                if (v) {
+                  return (
+                    <div className="bg-gray-700/50 border border-gray-600 rounded-lg p-3">
+                      <p className="text-sm text-white font-medium">{v.name || v.version_number}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {formatDownloads(v.downloads)} downloads · Published {timeAgo(v.date_published)}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {(v.game_versions || []).slice(0, 3).join(", ")} · {(v.loaders || []).join(", ")}
+                      </p>
+                    </div>
+                  );
+                }
+                return (
+                  <select
+                    value={installVersionId || ""}
+                    onChange={(e) => setInstallVersionId(e.target.value)}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="" disabled>Choose a version...</option>
+                    {versions.map((ver) => (
+                      <option key={ver.id} value={ver.id}>
+                        {ver.name || ver.version_number} · {(ver.game_versions || []).slice(0, 3).join(", ")} · {(ver.loaders || []).join(", ")}
+                      </option>
+                    ))}
+                  </select>
                 );
               })()}
             </div>
@@ -614,7 +634,7 @@ export default function ModpackDetailsPage() {
             </button>
             <button
               onClick={installModpack}
-              disabled={!acceptEula || installingVersion === installVersionId}
+              disabled={!acceptEula || !installVersionId || installingVersion === installVersionId}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-5 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
             >
               <FontAwesomeIcon icon={faDownload} className="text-xs" />
