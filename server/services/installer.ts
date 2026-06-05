@@ -18,7 +18,7 @@ export async function installModpack(
 ): Promise<InstallResult> {
   // Busca dados do modpack e versão
   const version = await prisma.modpackVersion.findUnique({
-    where: { id: versionId },
+    where: { id: BigInt(versionId) },
     include: { modpack: true }
   });
 
@@ -26,31 +26,28 @@ export async function installModpack(
     throw new Error('Versão não encontrada');
   }
 
-  // Cria ou atualiza registro
-  const serverModpack = await prisma.serverModpack.upsert({
-    where: {
-      serverId: serverId
-    },
-    create: {
-      serverId,
-      modpackId,
-      versionId,
+  // Limpa instalação anterior
+  await prisma.serverModpack.deleteMany({
+    where: { server_id: BigInt(serverId) }
+  });
+
+  // Cria novo registro
+  const serverModpack = await prisma.serverModpack.create({
+    data: {
+      server_id: BigInt(serverId),
+      modpack_id: BigInt(modpackId),
+      modpack_version_id: BigInt(versionId),
       status: 'installing',
-      installedAt: new Date(),
-      updatedAt: new Date()
-    },
-    update: {
-      modpackId,
-      versionId,
-      status: 'installing',
-      updatedAt: new Date()
+      installed_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date()
     }
   });
 
   // Inicia instalação em background
   processInstallation(serverId, version).catch(console.error);
 
-  return { jobId: serverModpack.id };
+  return { jobId: String(serverModpack.id) };
 }
 
 async function processInstallation(
@@ -58,9 +55,10 @@ async function processInstallation(
   version: any
 ) {
   const log: string[] = [];
+  const serverIdNum = BigInt(serverId);
   
   try {
-    log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.name}`);
+    log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.version}`);
     
     // Diretório do servidor (exemplo - ajustar conforme estrutura Jexactyl)
     const serverDir = `/var/lib/pterodactyl/volumes/${serverId}`;
@@ -68,8 +66,8 @@ async function processInstallation(
     // Download do modpack
     log.push(`[${new Date().toISOString()}] Baixando modpack...`);
     const downloadPath = path.join(serverDir, 'modpack.zip');
-    await downloadFile(version.downloadUrl, downloadPath);
-    log.push(`[${new Date().toISOString()}] Download concluído: ${version.size}`);
+    await downloadFile(version.download_url, downloadPath);
+    log.push(`[${new Date().toISOString()}] Download concluído: ${version.file_size}`);
     
     // Backup se necessário
     const worldBackup = path.join(serverDir, 'world_backup');
@@ -100,30 +98,42 @@ async function processInstallation(
     log.push(`[${new Date().toISOString()}] Instalação concluída com sucesso!`);
     
     // Atualiza status
-    await prisma.serverModpack.update({
-      where: { serverId },
-      data: {
-        status: 'installed',
-        installLog: log.join('\n')
-      }
+    const record = await prisma.serverModpack.findFirst({
+      where: { server_id: serverIdNum }
     });
+    if (record) {
+      await prisma.serverModpack.update({
+        where: { id: record.id },
+        data: {
+          status: 'installed',
+          install_log: log.join('\n'),
+          updated_at: new Date()
+        }
+      });
+    }
     
   } catch (error) {
     log.push(`[${new Date().toISOString()}] ERRO: ${error}`);
     
-    await prisma.serverModpack.update({
-      where: { serverId },
-      data: {
-        status: 'error',
-        installLog: log.join('\n')
-      }
+    const record = await prisma.serverModpack.findFirst({
+      where: { server_id: serverIdNum }
     });
+    if (record) {
+      await prisma.serverModpack.update({
+        where: { id: record.id },
+        data: {
+          status: 'error',
+          install_log: log.join('\n'),
+          updated_at: new Date()
+        }
+      });
+    }
   }
 }
 
 export async function uninstallModpack(serverId: string): Promise<void> {
   await prisma.serverModpack.deleteMany({
-    where: { serverId }
+    where: { server_id: BigInt(serverId) }
   });
 }
 
