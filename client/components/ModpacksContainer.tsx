@@ -574,7 +574,10 @@ export default function ModpacksContainer() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => history.push(`${match.url}/${modpack.slug}?provider=${provider}`)}
+                    onClick={() => {
+                      const detailsSlug = provider === "curseforge" ? String(modpack.id) : modpack.slug;
+                      history.push(`${match.url}/${detailsSlug}?provider=${provider}`);
+                    }}
                     className="bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
                   >
                     <FontAwesomeIcon icon={faInfoCircle} className="text-[10px]" />

@@ -141,7 +141,7 @@ export default function ModpackDetailsPage() {
           setLoading(false);
           return;
         }
-        const modId = /\d/.test(slug) ? slug : null;
+        const modId = /^\d+$/.test(slug) ? slug : null;
         if (!modId) {
           setError("ID do modpack CurseForge inválido.");
           setLoading(false);
