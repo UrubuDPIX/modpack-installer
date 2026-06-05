@@ -721,60 +721,36 @@ EOF
     
     # Configura Nginx proxy pass
     print_info "Configurando proxy no Nginx..."
-    local nginx_conf="/etc/nginx/sites-available/$(basename "$PANEL_DIR")"
-    if [ ! -f "$nginx_conf" ]; then
-        nginx_conf="/etc/nginx/conf.d/$(basename "$PANEL_DIR").conf"
-    fi
-    if [ ! -f "$nginx_conf" ]; then
-        nginx_conf="/etc/nginx/sites-enabled/default"
-    fi
-    if [ ! -f "$nginx_conf" ]; then
-        nginx_conf=$(find /etc/nginx/sites-enabled -maxdepth 1 -name "*.conf" -type f | head -n 1)
-    fi
-    if [ ! -f "$nginx_conf" ]; then
-        nginx_conf=$(find /etc/nginx/conf.d -maxdepth 1 -name "*.conf" -type f | head -n 1)
-    fi
-    if [ ! -f "$nginx_conf" ]; then
-        nginx_conf=$(find /etc/nginx -maxdepth 3 -name "*.conf" -type f -exec grep -l "server {" {} \; | head -n 1)
-    fi
-    
-    if [ -f "$nginx_conf" ]; then
-        # Remove regras antigas do modpack-installer
-        sed -i '/# BEGIN MODPACK INSTALLER PROXY/,/# END MODPACK INSTALLER PROXY/d' "$nginx_conf"
-        
-        # Insere regra antes do último '}' ou antes do location /
-        # Adiciona no início do server block
-        sed -i '/server {/a\\
-    # BEGIN MODPACK INSTALLER PROXY\
-    location ~ ^/api/client/servers/[^/]+/modpack {\
-        proxy_pass http://127.0.0.1:3001;\
-        proxy_http_version 1.1;\
-        proxy_set_header Upgrade $http_upgrade;\
-        proxy_set_header Connection "upgrade";\
-        proxy_set_header Host $host;\
-        proxy_set_header X-Real-IP $remote_addr;\
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\
-        proxy_set_header X-Forwarded-Proto $scheme;\
-    }\
-\
-    location /api/admin/modpack-settings {\
-        proxy_pass http://127.0.0.1:3001;\
-        proxy_http_version 1.1;\
-        proxy_set_header Host $host;\
-        proxy_set_header X-Real-IP $remote_addr;\
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\
-        proxy_set_header X-Forwarded-Proto $scheme;\
-    }\
-    # END MODPACK INSTALLER PROXY' "$nginx_conf"
-        
-        nginx -t 2>/dev/null && systemctl restart nginx || {
-            print_warning "Falha ao reiniciar Nginx. Verifique a configuração manualmente."
-        }
-        print_success "Proxy Nginx configurado"
-    else
-        print_warning "Arquivo de configuração Nginx não encontrado. Configure manualmente:"
-        echo "   location /api/client/servers/ { proxy_pass http://127.0.0.1:3001; }"
-    fi
+
+    # Cria arquivo de proxy separado em conf.d (mais robusto que editar config existente)
+    cat > /etc/nginx/conf.d/modpack-installer-proxy.conf << 'NGINX_EOF'
+# BEGIN MODPACK INSTALLER PROXY
+location ~ ^/api/client/servers/[^/]+/modpack {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /api/admin/modpack-settings {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+# END MODPACK INSTALLER PROXY
+NGINX_EOF
+
+    nginx -t 2>/dev/null && systemctl restart nginx || {
+        print_warning "Falha ao reiniciar Nginx. Verifique a configuração manualmente."
+    }
+    print_success "Proxy Nginx configurado"
 }
 
 # ============================================================================
