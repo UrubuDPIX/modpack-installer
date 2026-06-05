@@ -192,7 +192,44 @@ async function configureForge(serverDir: string, version: any): Promise<void> {
 }
 
 async function configureFabric(serverDir: string, version: any): Promise<void> {
-  // Configurações específicas do Fabric
+  // Lê modrinth.index.json e baixa os mods
+  const indexPath = path.join(serverDir, 'modrinth.index.json');
+  if (await directoryExists(indexPath)) {
+    const indexContent = await fs.readFile(indexPath, 'utf-8');
+    const index = JSON.parse(indexContent);
+    
+    // Baixa cada arquivo listado no index
+    for (const file of index.files || []) {
+      if (file.downloads && file.downloads.length > 0) {
+        const filePath = path.join(serverDir, file.path);
+        const fileDir = path.dirname(filePath);
+        await fs.mkdir(fileDir, { recursive: true });
+        
+        try {
+          await downloadFile(file.downloads[0], filePath);
+        } catch (e) {
+          console.error(`[Fabric] Falha ao baixar ${file.path}:`, e);
+        }
+      }
+    }
+  }
+  
+  // Cria eula.txt
+  const eulaPath = path.join(serverDir, 'eula.txt');
+  if (!await directoryExists(eulaPath)) {
+    await fs.writeFile(eulaPath, 'eula=true\n');
+  }
+  
+  // Baixa Fabric installer e cria server.jar
+  const mcVersion = version.minecraftVersion || '1.20.1';
+  const fabricInstallerUrl = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/0.15.7/0.11.2/server/jar`;
+  const serverJarPath = path.join(serverDir, 'server.jar');
+  
+  try {
+    await downloadFile(fabricInstallerUrl, serverJarPath);
+  } catch (e) {
+    console.error('[Fabric] Falha ao baixar server.jar:', e);
+  }
 }
 
 async function configureNeoForge(serverDir: string, version: any): Promise<void> {
