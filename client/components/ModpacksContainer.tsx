@@ -437,6 +437,7 @@ export default function ModpacksContainer() {
   };
 
   return (
+    <>
     <div className="p-6" style={{ maxWidth: 1200, margin: "0 auto" }}>
       {/* Header with provider switcher */}
       <div className="flex items-center justify-between mb-4">
@@ -729,5 +730,6 @@ export default function ModpacksContainer() {
         </div>
       </div>
     )}
+    </>
   );
 }
