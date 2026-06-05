@@ -60,20 +60,15 @@ export default function ModpackDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"description" | "versions">("description");
-  const [provider, setProvider] = useState<"modrinth" | "curseforge">("modrinth");
+
+  // Provider determinado sincronamente para evitar race condition
+  const queryProvider = new URLSearchParams(location.search).get("provider") as "modrinth" | "curseforge";
+  const provider: "modrinth" | "curseforge" =
+    queryProvider === "curseforge" || queryProvider === "modrinth"
+      ? queryProvider
+      : (localStorage.getItem("modpack_provider") as "modrinth" | "curseforge") || "modrinth";
 
   const curseforgeKey = localStorage.getItem("modpack_curseforge_key") || "";
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const qp = params.get("provider") as "modrinth" | "curseforge";
-    if (qp === "curseforge" || qp === "modrinth") {
-      setProvider(qp);
-    } else {
-      const stored = localStorage.getItem("modpack_provider") as "modrinth" | "curseforge";
-      if (stored) setProvider(stored);
-    }
-  }, [location.search]);
 
   useEffect(() => {
     if (!slug) return;
