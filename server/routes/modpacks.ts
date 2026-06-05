@@ -9,7 +9,7 @@ router.get('/', async (req, res) => {
     const modpacks = await prisma.modpack.findMany({
       include: {
         versions: {
-          orderBy: { releasedAt: 'desc' }
+          orderBy: { created_at: 'desc' }
         }
       }
     });
@@ -23,10 +23,10 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const modpack = await prisma.modpack.findUnique({
-      where: { id: req.params.id },
+      where: { id: BigInt(req.params.id) },
       include: {
         versions: {
-          orderBy: { releasedAt: 'desc' }
+          orderBy: { created_at: 'desc' }
         }
       }
     });
