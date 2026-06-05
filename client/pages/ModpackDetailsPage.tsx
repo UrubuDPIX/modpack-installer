@@ -9,7 +9,10 @@ import {
   faExternalLinkAlt,
   faClock,
   faCalendar,
+  faDownload,
 } from "@fortawesome/free-solid-svg-icons";
+// @ts-ignore
+import { ServerContext } from "@/state/server";
 // @ts-ignore
 import PageContentBlock from "@/components/elements/PageContentBlock";
 
@@ -60,6 +63,7 @@ export default function ModpackDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"description" | "versions">("description");
+  const [installingVersion, setInstallingVersion] = useState<string | null>(null);
 
   // Provider determinado sincronamente para evitar race condition
   const queryProvider = new URLSearchParams(location.search).get("provider") as "modrinth" | "curseforge";
@@ -69,12 +73,38 @@ export default function ModpackDetailsPage() {
       : (localStorage.getItem("modpack_provider") as "modrinth" | "curseforge") || "modrinth";
 
   const curseforgeKey = localStorage.getItem("modpack_curseforge_key") || "";
+  const serverId = ServerContext.useStoreState((state: any) => state.server.data?.uuid);
 
   useEffect(() => {
     if (!slug) return;
     fetchDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, provider]);
+
+  const installModpack = async (versionId: string) => {
+    if (!serverId) return;
+    setInstallingVersion(versionId);
+    try {
+      const response = await fetch(`/api/client/servers/${serverId}/modpack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modpack_slug: slug,
+          version_id: versionId,
+          provider: provider,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Falha ao instalar modpack");
+      }
+      alert("Modpack instalado com sucesso!");
+    } catch (err: any) {
+      alert(err.message || "Erro ao instalar modpack");
+    } finally {
+      setInstallingVersion(null);
+    }
+  };
 
   const fetchDetails = async () => {
     setLoading(true);
@@ -284,6 +314,14 @@ export default function ModpackDetailsPage() {
                     Website
                   </a>
                 )}
+                <button
+                  onClick={() => modpack.latest_version && installModpack(modpack.latest_version.id)}
+                  disabled={!modpack.latest_version || !serverId || installingVersion === modpack.latest_version?.id}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                >
+                  <FontAwesomeIcon icon={faDownload} className="text-xs" />
+                  {installingVersion === modpack.latest_version?.id ? "Installing..." : "Install"}
+                </button>
               </div>
             </div>
           </div>
@@ -361,6 +399,27 @@ export default function ModpackDetailsPage() {
                         {(v.game_versions || []).slice(0, 3).join(", ")} · {(v.loaders || []).join(", ")}
                         {v.version_type && ` · ${v.version_type}`}
                       </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                      {modpack.url && (
+                        <a
+                          href={modpack.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                        >
+                          <FontAwesomeIcon icon={faExternalLinkAlt} className="text-[10px]" />
+                          Website
+                        </a>
+                      )}
+                      <button
+                        onClick={() => installModpack(v.id)}
+                        disabled={!serverId || installingVersion === v.id}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+                      >
+                        <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
+                        {installingVersion === v.id ? "..." : "Install"}
+                      </button>
                     </div>
                   </div>
                 ))
