@@ -631,6 +631,142 @@ JSEOF
 }
 
 # ============================================================================
+# SETUP DO BACKEND NODE.JS
+# ============================================================================
+
+setup_backend() {
+    print_step "Configurando backend Node.js..."
+    
+    local blueprint_dir="$PANEL_DIR/blueprints/modpack-installer"
+    
+    if [ ! -d "$blueprint_dir" ]; then
+        print_warning "Diretório do blueprint não encontrado. Pulando backend."
+        return 0
+    fi
+    
+    cd "$blueprint_dir"
+    
+    # Cria .env com DATABASE_URL do painel
+    local db_host=$(grep DB_HOST "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "127.0.0.1")
+    local db_port=$(grep DB_PORT "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "3306")
+    local db_name=$(grep DB_DATABASE "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "panel")
+    local db_user=$(grep DB_USERNAME "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "root")
+    local db_pass=$(grep DB_PASSWORD "$PANEL_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "")
+    
+    cat > "$blueprint_dir/.env" << EOF
+DATABASE_URL=mysql://$db_user:$db_pass@$db_host:$db_port/$db_name
+PORT=3001
+EOF
+    
+    print_info "Instalando dependências do backend..."
+    if [ -f "$blueprint_dir/package.json" ]; then
+        npm install --prefix "$blueprint_dir" 2>&1 | tail -n 5 || {
+            print_warning "npm install falhou. Tentando com yarn..."
+            yarn install --cwd "$blueprint_dir" 2>&1 | tail -n 5 || true
+        }
+    else
+        print_warning "package.json não encontrado. Backend pode não funcionar."
+        return 0
+    fi
+    
+    # Gera cliente Prisma
+    print_info "Gerando cliente Prisma..."
+    if [ -f "$blueprint_dir/prisma/schema.prisma" ]; then
+        npx prisma generate --schema="$blueprint_dir/prisma/schema.prisma" 2>&1 | tail -n 3 || true
+    fi
+    
+    # Compila TypeScript
+    print_info "Compilando backend..."
+    npx tsc --project "$blueprint_dir/tsconfig.json" 2>&1 | tail -n 10 || {
+        print_warning "Compilação TypeScript teve erros, tentando continuar..."
+    }
+    
+    # Cria serviço systemd
+    print_info "Criando serviço systemd..."
+    cat > /etc/systemd/system/modpack-installer.service << EOF
+[Unit]
+Description=Modpack Installer Backend
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$blueprint_dir
+Environment=DATABASE_URL=mysql://$db_user:$db_pass@$db_host:$db_port/$db_name
+Environment=PORT=3001
+ExecStart=/usr/bin/node $blueprint_dir/dist/server/standalone.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl daemon-reload
+    systemctl enable modpack-installer.service
+    systemctl restart modpack-installer.service || {
+        print_warning "Falha ao iniciar serviço. Tentando iniciar manualmente..."
+        cd "$blueprint_dir"
+        nohup node "$blueprint_dir/dist/server/standalone.js" > /tmp/modpack-installer.log 2>&1 &
+    }
+    
+    sleep 2
+    if curl -s http://localhost:3001/health > /dev/null 2>&1; then
+        print_success "Backend rodando na porta 3001"
+    else
+        print_warning "Backend pode não estar respondendo na porta 3001"
+    fi
+    
+    # Configura Nginx proxy pass
+    print_info "Configurando proxy no Nginx..."
+    local nginx_conf="/etc/nginx/sites-available/$(basename "$PANEL_DIR")"
+    if [ ! -f "$nginx_conf" ]; then
+        nginx_conf="/etc/nginx/conf.d/$(basename "$PANEL_DIR").conf"
+    fi
+    if [ ! -f "$nginx_conf" ]; then
+        nginx_conf="/etc/nginx/sites-enabled/default"
+    fi
+    
+    if [ -f "$nginx_conf" ]; then
+        # Remove regras antigas do modpack-installer
+        sed -i '/# BEGIN MODPACK INSTALLER PROXY/,/# END MODPACK INSTALLER PROXY/d' "$nginx_conf"
+        
+        # Insere regra antes do último '}' ou antes do location /
+        # Adiciona no início do server block
+        sed -i '/server {/a\\
+    # BEGIN MODPACK INSTALLER PROXY\
+    location ~ ^/api/client/servers/[^/]+/modpack {\
+        proxy_pass http://127.0.0.1:3001;\
+        proxy_http_version 1.1;\
+        proxy_set_header Upgrade $http_upgrade;\
+        proxy_set_header Connection "upgrade";\
+        proxy_set_header Host $host;\
+        proxy_set_header X-Real-IP $remote_addr;\
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\
+        proxy_set_header X-Forwarded-Proto $scheme;\
+    }\
+\
+    location /api/admin/modpack-settings {\
+        proxy_pass http://127.0.0.1:3001;\
+        proxy_http_version 1.1;\
+        proxy_set_header Host $host;\
+        proxy_set_header X-Real-IP $remote_addr;\
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\
+        proxy_set_header X-Forwarded-Proto $scheme;\
+    }\
+    # END MODPACK INSTALLER PROXY' "$nginx_conf"
+        
+        nginx -t 2>/dev/null && systemctl restart nginx || {
+            print_warning "Falha ao reiniciar Nginx. Verifique a configuração manualmente."
+        }
+        print_success "Proxy Nginx configurado"
+    else
+        print_warning "Arquivo de configuração Nginx não encontrado. Configure manualmente:"
+        echo "   location /api/client/servers/ { proxy_pass http://127.0.0.1:3001; }"
+    fi
+}
+
+# ============================================================================
 # BUILD DO FRONTEND
 # ============================================================================
 
@@ -992,6 +1128,7 @@ main() {
     register_permissions
     inject_frontend_routes
     build_frontend
+    setup_backend
     fix_permissions
     restart_services
     verify_installation
