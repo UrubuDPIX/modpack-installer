@@ -128,6 +128,9 @@ router.post('/:id/modpack', async (req, res) => {
       return res.status(400).json({ message: 'Não foi possível obter URL de download da versão' });
     }
 
+    // Gerar slug a partir do nome
+    const modpackSlug = modpackName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
     // Criar ou atualizar modpack no banco
     let modpack = await prisma.modpack.findFirst({
       where: { name: modpackName }
@@ -137,20 +140,24 @@ router.post('/:id/modpack', async (req, res) => {
       modpack = await prisma.modpack.create({
         data: {
           name: modpackName,
-          author: modpackAuthor,
+          slug: modpackSlug,
           description: modpackDescription,
           icon: modpackIcon,
-          downloads: modpackDownloads
+          source: provider,
+          source_id: modpack_slug,
+          minecraft_version: minecraftVersion,
+          modloader: loader,
+          is_active: 1
         }
       });
     } else {
       modpack = await prisma.modpack.update({
         where: { id: modpack.id },
         data: {
-          author: modpackAuthor,
           description: modpackDescription,
           icon: modpackIcon,
-          downloads: modpackDownloads
+          minecraft_version: minecraftVersion,
+          modloader: loader
         }
       });
     }
