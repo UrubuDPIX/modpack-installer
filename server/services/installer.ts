@@ -26,17 +26,22 @@ export async function installModpack(
     throw new Error('Versão não encontrada');
   }
 
+  // Converte IDs de forma segura
+  const serverIdNum = !isNaN(Number(serverId)) ? BigInt(serverId) : BigInt(0);
+  const modpackIdNum = !isNaN(Number(modpackId)) ? BigInt(modpackId) : BigInt(0);
+  const versionIdNum = !isNaN(Number(versionId)) ? BigInt(versionId) : BigInt(0);
+
   // Limpa instalação anterior
   await prisma.serverModpack.deleteMany({
-    where: { server_id: BigInt(serverId) }
+    where: { server_id: serverIdNum }
   });
 
   // Cria novo registro
   const serverModpack = await prisma.serverModpack.create({
     data: {
-      server_id: BigInt(serverId),
-      modpack_id: BigInt(modpackId),
-      modpack_version_id: BigInt(versionId),
+      server_id: serverIdNum,
+      modpack_id: modpackIdNum,
+      modpack_version_id: versionIdNum,
       status: 'installing',
       installed_at: new Date(),
       created_at: new Date(),
@@ -55,7 +60,7 @@ async function processInstallation(
   version: any
 ) {
   const log: string[] = [];
-  const serverIdNum = BigInt(serverId);
+  const serverIdNum = !isNaN(Number(serverId)) ? BigInt(serverId) : BigInt(0);
   
   try {
     log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.version}`);
@@ -132,8 +137,9 @@ async function processInstallation(
 }
 
 export async function uninstallModpack(serverId: string): Promise<void> {
+  const serverIdNum = !isNaN(Number(serverId)) ? BigInt(serverId) : BigInt(0);
   await prisma.serverModpack.deleteMany({
-    where: { server_id: BigInt(serverId) }
+    where: { server_id: serverIdNum }
   });
 }
 
