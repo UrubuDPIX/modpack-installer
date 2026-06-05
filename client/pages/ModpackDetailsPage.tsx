@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useEffect, useState } from "react";
-import { useParams, useHistory } from "react-router-dom";
+import { useParams, useHistory, useLocation } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faCheck,
@@ -53,6 +53,7 @@ interface ModpackDetail {
 export default function ModpackDetailsPage() {
   const { slug } = useParams<{ slug: string }>();
   const history = useHistory();
+  const location = useLocation();
 
   const [modpack, setModpack] = useState<ModpackDetail | null>(null);
   const [versions, setVersions] = useState<ModpackVersion[]>([]);
@@ -64,15 +65,21 @@ export default function ModpackDetailsPage() {
   const curseforgeKey = localStorage.getItem("modpack_curseforge_key") || "";
 
   useEffect(() => {
-    const storedProvider = localStorage.getItem("modpack_provider") as "modrinth" | "curseforge";
-    if (storedProvider) setProvider(storedProvider);
-  }, []);
+    const params = new URLSearchParams(location.search);
+    const qp = params.get("provider") as "modrinth" | "curseforge";
+    if (qp === "curseforge" || qp === "modrinth") {
+      setProvider(qp);
+    } else {
+      const stored = localStorage.getItem("modpack_provider") as "modrinth" | "curseforge";
+      if (stored) setProvider(stored);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (!slug) return;
     fetchDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+  }, [slug, provider]);
 
   const fetchDetails = async () => {
     setLoading(true);
