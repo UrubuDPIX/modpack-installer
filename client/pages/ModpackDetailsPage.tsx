@@ -64,6 +64,10 @@ export default function ModpackDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"description" | "versions">("description");
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [installVersionId, setInstallVersionId] = useState<string | null>(null);
+  const [deleteServerFiles, setDeleteServerFiles] = useState(false);
+  const [acceptEula, setAcceptEula] = useState(false);
 
   // Provider determinado sincronamente para evitar race condition
   const queryProvider = new URLSearchParams(location.search).get("provider") as "modrinth" | "curseforge";
@@ -81,17 +85,31 @@ export default function ModpackDetailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, provider]);
 
-  const installModpack = async (versionId: string) => {
-    if (!serverId) return;
-    setInstallingVersion(versionId);
+  const openInstallModal = (versionId: string) => {
+    setInstallVersionId(versionId);
+    setDeleteServerFiles(false);
+    setAcceptEula(false);
+    setShowInstallModal(true);
+  };
+
+  const installModpack = async () => {
+    if (!serverId || !installVersionId) return;
+    if (!acceptEula) {
+      alert("Você deve aceitar o Minecraft EULA para continuar.");
+      return;
+    }
+    setInstallingVersion(installVersionId);
+    setShowInstallModal(false);
     try {
       const response = await fetch(`/api/client/servers/${serverId}/modpack`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           modpack_slug: slug,
-          version_id: versionId,
+          version_id: installVersionId,
           provider: provider,
+          delete_files: deleteServerFiles,
+          accept_eula: acceptEula,
         }),
       });
       const data = await response.json();
@@ -103,6 +121,7 @@ export default function ModpackDetailsPage() {
       alert(err.message || "Erro ao instalar modpack");
     } finally {
       setInstallingVersion(null);
+      setInstallVersionId(null);
     }
   };
 
@@ -279,6 +298,7 @@ export default function ModpackDetailsPage() {
   }
 
   return (
+    <>
     <PageContentBlock title={modpack.title} showFlashKey="server:modpacks">
       {/* Back link */}
       <button onClick={() => history.goBack()} className="text-gray-400 hover:text-white flex items-center gap-2 mb-4 transition-colors">
@@ -315,7 +335,7 @@ export default function ModpackDetailsPage() {
                   </a>
                 )}
                 <button
-                  onClick={() => modpack.latest_version && installModpack(modpack.latest_version.id)}
+                  onClick={() => modpack.latest_version && openInstallModal(modpack.latest_version.id)}
                   disabled={!modpack.latest_version || !serverId || installingVersion === modpack.latest_version?.id}
                   className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
                 >
@@ -413,7 +433,7 @@ export default function ModpackDetailsPage() {
                         </a>
                       )}
                       <button
-                        onClick={() => installModpack(v.id)}
+                        onClick={() => openInstallModal(v.id)}
                         disabled={!serverId || installingVersion === v.id}
                         className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
                       >
@@ -507,5 +527,103 @@ export default function ModpackDetailsPage() {
         </div>
       </div>
     </PageContentBlock>
+
+    {/* Install Modal */}
+    {showInstallModal && installVersionId && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+          {/* Header */}
+          <div className="flex items-start gap-4 p-6 border-b border-gray-700">
+            <img
+              src={modpack?.icon_url || "/default-modpack.png"}
+              alt={modpack?.title}
+              className="w-14 h-14 rounded-lg object-cover border border-gray-600 flex-shrink-0"
+            />
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-bold text-white truncate">{modpack?.title}</h2>
+              <p className="text-sm text-gray-400 mt-1">
+                {formatDownloads(modpack?.downloads || 0)} downloads
+              </p>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 space-y-5">
+            {/* Selected version */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Select Version</h3>
+              {(() => {
+                const v = versions.find((ver) => ver.id === installVersionId);
+                return v ? (
+                  <div className="bg-gray-700/50 border border-gray-600 rounded-lg p-3">
+                    <p className="text-sm text-white font-medium">{v.name || v.version_number}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {(v.game_versions || []).slice(0, 3).join(", ")} · {(v.loaders || []).join(", ")}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">Version not found</p>
+                );
+              })()}
+            </div>
+
+            {/* Delete server files */}
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <div className="relative flex items-center">
+                <input
+                  type="checkbox"
+                  checked={deleteServerFiles}
+                  onChange={(e) => setDeleteServerFiles(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-5 bg-gray-700 rounded-full peer-checked:bg-red-500 transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">Delete Server Files</p>
+                <p className="text-xs text-gray-400">This will erase all files from your server before installing the modpack. This cannot be undone.</p>
+              </div>
+            </label>
+
+            {/* Accept EULA */}
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <div className="relative flex items-center">
+                <input
+                  type="checkbox"
+                  checked={acceptEula}
+                  onChange={(e) => setAcceptEula(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-5 bg-gray-700 rounded-full peer-checked:bg-blue-500 transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">Accept Minecraft EULA</p>
+                <p className="text-xs text-gray-400">By enabling this option you are indicating your agreement to the Minecraft EULA.</p>
+              </div>
+            </label>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-700 bg-gray-800/50">
+            <button
+              onClick={() => setShowInstallModal(false)}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={installModpack}
+              disabled={!acceptEula || installingVersion === installVersionId}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-5 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+            >
+              <FontAwesomeIcon icon={faDownload} className="text-xs" />
+              {installingVersion === installVersionId ? "Installing..." : "Install"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
