@@ -470,11 +470,29 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
     await fs.writeFile(eulaPath, 'eula=true\n');
   }
   
-  // Detecta versão do Minecraft do modrinth.index.json
+  // Detecta versão do Minecraft e do Fabric Loader
   let mcVersion = version.minecraftVersion || '1.20.1';
-  let fabricLoaderVersion = '0.15.7';
+  let fabricLoaderVersion = '0.15.11'; // Fallback mais moderno
   
   try {
+    // 1. Tenta ler do manifest.json (CurseForge)
+    const manifestPath = path.join(serverDir, 'manifest.json');
+    if (await fileExists(manifestPath)) {
+      const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+      const manifest = JSON.parse(manifestContent);
+      if (manifest.minecraft?.version) {
+        mcVersion = manifest.minecraft.version;
+        console.log(`[Fabric] Minecraft version detectada no manifest.json: ${mcVersion}`);
+      }
+      const loaders = manifest.minecraft?.modLoaders || [];
+      const fabricLoader = loaders.find((l: any) => l.id && l.id.startsWith('fabric-'));
+      if (fabricLoader) {
+        fabricLoaderVersion = fabricLoader.id.replace('fabric-', '');
+        console.log(`[Fabric] Fabric Loader version detectada no manifest.json: ${fabricLoaderVersion}`);
+      }
+    }
+    
+    // 2. Tenta ler do modrinth.index.json como fallback
     const indexPath = path.join(serverDir, 'modrinth.index.json');
     if (await directoryExists(indexPath)) {
       const indexContent = await fs.readFile(indexPath, 'utf-8');
@@ -483,17 +501,17 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
       const gameVersion = index.dependencies?.minecraft;
       if (gameVersion) {
         mcVersion = gameVersion;
-        console.log(`[Fabric] Minecraft version detectada: ${mcVersion}`);
+        console.log(`[Fabric] Minecraft version detectada no modrinth.index.json: ${mcVersion}`);
       }
       // Extrai versão do Fabric Loader
       const loaderDep = index.dependencies?.['fabric-loader'];
       if (loaderDep) {
         fabricLoaderVersion = loaderDep;
-        console.log(`[Fabric] Fabric Loader version detectada: ${fabricLoaderVersion}`);
+        console.log(`[Fabric] Fabric Loader version detectada no modrinth.index.json: ${fabricLoaderVersion}`);
       }
     }
   } catch (e) {
-    console.warn('[Fabric] Falha ao ler modrinth.index.json:', e);
+    console.warn('[Fabric] Falha ao ler manifest.json ou modrinth.index.json:', e);
   }
 
   // Baixa Fabric installer e cria server.jar
