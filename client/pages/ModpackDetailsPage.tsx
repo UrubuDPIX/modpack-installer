@@ -123,7 +123,6 @@ export default function ModpackDetailsPage() {
       if (!response.ok) {
         throw new Error(data.error || "Falha ao instalar modpack");
       }
-      alert("Modpack instalado com sucesso!");
     } catch (err: any) {
       alert(err.message || "Erro ao instalar modpack");
     } finally {
