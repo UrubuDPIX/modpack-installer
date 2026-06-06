@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useEffect, useState } from "react";
+import InstallProgressModal from "../components/InstallProgressModal";
 import { useParams, useHistory, useLocation } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -64,6 +65,8 @@ export default function ModpackDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"description" | "versions">("description");
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [progressModpackTitle, setProgressModpackTitle] = useState('');
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [installVersionId, setInstallVersionId] = useState<string | null>(null);
   const [installModalMode, setInstallModalMode] = useState<"select" | "fixed">("select");
@@ -102,6 +105,8 @@ export default function ModpackDetailsPage() {
     }
     setInstallingVersion(installVersionId);
     setShowInstallModal(false);
+    setShowProgressModal(true);
+    setProgressModpackTitle(modpack?.title || 'Modpack');
     try {
       const response = await fetch(`/api/client/servers/${serverId}/modpack`, {
         method: "POST",
@@ -658,6 +663,14 @@ export default function ModpackDetailsPage() {
         </div>
       </div>
     )}
+
+    {/* Progress Modal */}
+    <InstallProgressModal
+      modpackTitle={progressModpackTitle}
+      isOpen={showProgressModal}
+      onClose={() => setShowProgressModal(false)}
+      serverId={serverId || ''}
+    />
     </>
   );
 }
