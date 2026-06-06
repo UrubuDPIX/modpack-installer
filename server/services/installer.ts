@@ -87,6 +87,10 @@ async function processInstallation(
     log.push(`[${new Date().toISOString()}] Extraindo arquivos...`);
     await execAsync(`cd ${serverDir} && unzip -o modpack.zip && rm modpack.zip`);
     
+    // Corrige permissões para o usuário pterodactyl
+    log.push(`[${new Date().toISOString()}] Corrigindo permissoes...`);
+    await execAsync(`chown -R pterodactyl:pterodactyl ${serverDir}`);
+    
     // Move arquivos do server pack se existir
     const overridesDir = path.join(serverDir, 'overrides');
     if (await directoryExists(overridesDir)) {
