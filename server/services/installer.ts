@@ -69,6 +69,15 @@ async function processInstallation(
     // Cria diretório se não existir
     await fs.mkdir(serverDir, { recursive: true });
     
+    // Limpa diretório do servidor (remove arquivos de instalações anteriores)
+    log.push(`[${new Date().toISOString()}] Limpando diretório do servidor...`);
+    try {
+      await cleanServerDir(serverDir);
+      log.push(`[${new Date().toISOString()}] Diretório limpo com sucesso`);
+    } catch (e: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao limpar diretório: ${e?.message || e}`);
+    }
+    
     // Backup do mundo ANTES de limpar
     const worldBackup = path.join(serverDir, 'world_backup');
     const worldDir = path.join(serverDir, 'world');
@@ -680,6 +689,27 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string): P
   }
 
   return startupCommand;
+}
+
+async function cleanServerDir(serverDir: string): Promise<void> {
+  const preserve = ['.pteroignore'];
+  const files = await fs.readdir(serverDir);
+  
+  for (const file of files) {
+    if (preserve.includes(file)) continue;
+    
+    const filePath = path.join(serverDir, file);
+    try {
+      const stats = await fs.stat(filePath);
+      if (stats.isDirectory()) {
+        await fs.rm(filePath, { recursive: true, force: true });
+      } else {
+        await fs.unlink(filePath);
+      }
+    } catch (e) {
+      // Ignora erros de permissão
+    }
+  }
 }
 
 async function directoryExists(path: string): Promise<boolean> {
