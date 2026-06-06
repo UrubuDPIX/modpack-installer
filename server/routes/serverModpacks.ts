@@ -120,6 +120,10 @@ router.post('/:id/modpack', async (req, res) => {
         modpackDescription = mod.summary || '';
         modpackIcon = mod.logo?.url || '';
         modpackDownloads = mod.downloadCount || 0;
+      } else {
+        const errorText = await modRes.text();
+        console.error(`[CurseForge] Erro ao buscar mod ${modpack_slug}: ${modRes.status} - ${errorText}`);
+        return res.status(400).json({ message: `Erro ao buscar modpack na CurseForge: ${modRes.status}` });
       }
       // Buscar arquivo (version_id é o fileId)
       const fileRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${version_id}`, {
@@ -133,9 +137,22 @@ router.post('/:id/modpack', async (req, res) => {
         const rawLoader = file.sortableGameVersions?.find((v: any) => ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(v.gameVersionName))?.gameVersionName || 'Forge';
         loader = ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(rawLoader) ? rawLoader : 'Forge';
         loaderVersion = rawLoader;
-        downloadUrl = file.downloadUrl || `https://edge.forgecdn.net/files/${Math.floor(file.id / 1000)}/${file.id % 1000}/${file.fileName}`;
+        // CurseForge nem sempre retorna downloadUrl, tenta fallback
+        if (file.downloadUrl) {
+          downloadUrl = file.downloadUrl;
+        } else if (file.id && file.fileName) {
+          const idStr = String(file.id);
+          const part1 = idStr.substring(0, idStr.length - 3) || '0';
+          const part2 = idStr.substring(idStr.length - 3).padStart(3, '0');
+          downloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${file.fileName}`;
+        }
         fileSize = String(file.fileLength || 0);
         releasedAt = new Date(file.fileDate) || new Date();
+        console.log(`[CurseForge] Download URL: ${downloadUrl || 'VAZIO'}`);
+      } else {
+        const errorText = await fileRes.text();
+        console.error(`[CurseForge] Erro ao buscar arquivo ${version_id}: ${fileRes.status} - ${errorText}`);
+        return res.status(400).json({ message: `Erro ao buscar arquivo do modpack: ${fileRes.status}` });
       }
     }
 
