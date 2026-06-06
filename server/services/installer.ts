@@ -113,6 +113,58 @@ async function processInstallation(
       await execAsync(`cp -r ${overridesDir}/* ${serverDir}/ && rm -rf ${overridesDir}`);
     }
     
+    // Se tiver manifest.json (CurseForge), baixa mods individualmente
+    const manifestPath = path.join(serverDir, 'manifest.json');
+    const modsDir = path.join(serverDir, 'mods');
+    if (await fileExists(manifestPath) && !await directoryExists(modsDir)) {
+      log.push(`[${new Date().toISOString()}] Detectado manifest.json, baixando mods...`);
+      try {
+        const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+        const manifest = JSON.parse(manifestContent);
+        if (manifest.files && Array.isArray(manifest.files)) {
+          await fs.mkdir(modsDir, { recursive: true });
+          const cfKey = await getCurseForgeKey();
+          for (const modInfo of manifest.files) {
+            try {
+              if (modInfo.projectID && modInfo.fileID) {
+                // Busca URL de download do mod
+                let modDownloadUrl = '';
+                if (cfKey) {
+                  try {
+                    const modDownloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}/download`, {
+                      headers: { 'x-api-key': cfKey }
+                    });
+                    if (modDownloadRes.ok) {
+                      const modDownloadData = await modDownloadRes.json() as any;
+                      modDownloadUrl = modDownloadData.data?.url || '';
+                    }
+                  } catch (e) {
+                    // ignora erro individual
+                  }
+                }
+                // Fallback manual
+                if (!modDownloadUrl) {
+                  const idStr = String(modInfo.fileID);
+                  const part1 = idStr.substring(0, idStr.length - 3) || '0';
+                  const part2 = idStr.substring(idStr.length - 3).padStart(3, '0');
+                  modDownloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${modInfo.fileName || 'mod.jar'}`;
+                }
+                if (modDownloadUrl) {
+                  const modDest = path.join(modsDir, `${modInfo.projectID}_${modInfo.fileID}.jar`);
+                  await downloadFile(modDownloadUrl, modDest);
+                }
+              }
+            } catch (modErr: any) {
+              log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar mod ${modInfo.projectID}/${modInfo.fileID}: ${modErr.message}`);
+            }
+          }
+          log.push(`[${new Date().toISOString()}] Mods baixados: ${manifest.files.length}`);
+        }
+      } catch (e: any) {
+        log.push(`[${new Date().toISOString()}] AVISO: Falha ao processar manifest.json: ${e.message}`);
+      }
+    }
+    
     // Configurações específicas do loader (usa modloader do modpack)
     const loaderType = version.modpack?.modloader || version.loader || 'Forge';
     log.push(`[${new Date().toISOString()}] Configurando loader: ${loaderType}...`);
@@ -393,5 +445,23 @@ async function directoryExists(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    const stats = await fs.stat(path);
+    return stats.isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function getCurseForgeKey(): Promise<string | null> {
+  try {
+    const result: any = await prisma.$queryRaw`SELECT value FROM modpack_settings WHERE \`key\` = 'curseforge_api_key' LIMIT 1`;
+    return result?.[0]?.value || null;
+  } catch {
+    return null;
   }
 }
