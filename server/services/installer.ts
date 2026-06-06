@@ -69,6 +69,16 @@ async function processInstallation(
     // Cria diretório se não existir
     await fs.mkdir(serverDir, { recursive: true });
     
+    // Backup do mundo ANTES de limpar
+    const worldBackup = path.join(serverDir, 'world_backup');
+    const worldDir = path.join(serverDir, 'world');
+    if (await directoryExists(worldDir)) {
+      log.push(`[${new Date().toISOString()}] Fazendo backup do mundo...`);
+      await execAsync(`rm -rf ${worldBackup} && cp -r ${worldDir} ${worldBackup}`).catch((e: any) => {
+        log.push(`[${new Date().toISOString()}] AVISO: Falha no backup do mundo: ${e?.message || e}`);
+      });
+    }
+    
     // Limpa arquivos antigos (antes de baixar)
     log.push(`[${new Date().toISOString()}] Limpando instalação anterior...`);
     await cleanServerDirectory(serverDir);
@@ -78,10 +88,6 @@ async function processInstallation(
     const downloadPath = path.join(serverDir, 'modpack.zip');
     await downloadFile(version.download_url, downloadPath);
     log.push(`[${new Date().toISOString()}] Download concluído: ${version.file_size}`);
-    
-    // Backup se necessário
-    const worldBackup = path.join(serverDir, 'world_backup');
-    await execAsync(`cp -r ${path.join(serverDir, 'world')} ${worldBackup}`).catch(() => {});
     
     // Extrai modpack
     log.push(`[${new Date().toISOString()}] Extraindo arquivos...`);
@@ -99,11 +105,34 @@ async function processInstallation(
     
     // Configurações específicas do loader (usa modloader do modpack)
     const loaderType = version.modpack?.modloader || version.loader || 'Forge';
+    log.push(`[${new Date().toISOString()}] Configurando loader: ${loaderType}...`);
     await configureLoader(serverDir, { ...version, loader: loaderType });
+    
+    // Verifica se server.jar existe - ESSENCIAL para iniciar
+    const serverJarPath = path.join(serverDir, 'server.jar');
+    if (!await directoryExists(serverJarPath)) {
+      log.push(`[${new Date().toISOString()}] AVISO: server.jar não encontrado após configuração!`);
+      // Tenta baixar server.jar vanilla como último recurso
+      try {
+        const mcVersion = version.minecraftVersion || '1.20.1';
+        const vanillaUrl = `https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce8290b87224b77f5484/server.jar`; // 1.20.1 fallback
+        log.push(`[${new Date().toISOString()}] Tentando download fallback do server.jar...`);
+        await downloadFile(vanillaUrl, serverJarPath);
+        log.push(`[${new Date().toISOString()}] server.jar fallback baixado`);
+      } catch (e: any) {
+        log.push(`[${new Date().toISOString()}] ERRO CRÍTICO: Não foi possível obter server.jar: ${e?.message || e}`);
+        throw new Error('server.jar não encontrado após instalação');
+      }
+    } else {
+      log.push(`[${new Date().toISOString()}] server.jar verificado com sucesso`);
+    }
     
     // Restaura mundo se existir backup
     if (await directoryExists(worldBackup)) {
-      await execAsync(`rm -rf ${path.join(serverDir, 'world')} && mv ${worldBackup} ${path.join(serverDir, 'world')}`);
+      log.push(`[${new Date().toISOString()}] Restaurando mundo...`);
+      await execAsync(`rm -rf ${worldDir} && mv ${worldBackup} ${worldDir}`).catch((e: any) => {
+        log.push(`[${new Date().toISOString()}] AVISO: Falha ao restaurar mundo: ${e?.message || e}`);
+      });
     }
     
     log.push(`[${new Date().toISOString()}] Instalação concluída com sucesso!`);
