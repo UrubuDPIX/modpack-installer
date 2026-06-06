@@ -272,6 +272,15 @@ async function processInstallation(
       });
     }
     
+    // Atualiza startup command se necessário (NeoForge)
+    log.push(`[${new Date().toISOString()}] Verificando startup command...`);
+    try {
+      await updateServerStartup(serverId, serverDir);
+      log.push(`[${new Date().toISOString()}] Startup command atualizado`);
+    } catch (e: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao atualizar startup: ${e?.message || e}`);
+    }
+    
     // Inicia servidor automaticamente
     log.push(`[${new Date().toISOString()}] Iniciando servidor...`);
     try {
@@ -470,6 +479,72 @@ async function startServer(serverId: string): Promise<void> {
     }
   } catch (e: any) {
     console.error('[AutoStart] Falha ao iniciar servidor:', e?.message || String(e));
+  }
+}
+
+async function updateServerStartup(serverId: string, serverDir: string): Promise<void> {
+  const apiKey = await getPanelApiKey();
+  if (!apiKey) {
+    console.warn('[Startup] API Key do painel não configurada.');
+    return;
+  }
+
+  // Verifica se há instalador do NeoForge
+  const files = await fs.readdir(serverDir);
+  const neoForgeInstaller = files.find(f => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+  if (!neoForgeInstaller) return;
+
+  // Extrai versão do NeoForge do nome do arquivo
+  const match = neoForgeInstaller.match(/neoforge-(.+)-installer\.jar/);
+  if (!match) return;
+  const neoForgeVersion = match[1];
+
+  const startupCommand = `java @user_jvm_args.txt @libraries/net/neoforged/neoforge/${neoForgeVersion}/unix_args.txt nogui`;
+
+  try {
+    console.log(`[Startup] Atualizando startup command para NeoForge ${neoForgeVersion}...`);
+    
+    // Obtém dados do servidor para pegar a egg ID
+    const serverRes = await fetch(`https://host.foxy-mc.com/api/application/servers/${serverId}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json'
+      }
+    });
+    
+    let eggId = 1;
+    if (serverRes.ok) {
+      const serverData = await serverRes.json() as any;
+      eggId = serverData.attributes?.egg || 1;
+    }
+
+    const response = await fetch(`https://host.foxy-mc.com/api/application/servers/${serverId}/startup`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        startup: startupCommand,
+        environment: {
+          SERVER_JARFILE: 'server.jar',
+          BUILD_NUMBER: 'latest',
+          BUILD_TYPE: 'recommended'
+        },
+        egg: eggId,
+        skip_scripts: false
+      })
+    });
+
+    if (response.ok) {
+      console.log(`[Startup] Comando de startup atualizado: ${startupCommand}`);
+    } else {
+      const errorData = await response.text();
+      console.error(`[Startup] API retornou ${response.status}: ${errorData}`);
+    }
+  } catch (e: any) {
+    console.error('[Startup] Falha ao atualizar startup:', e?.message || String(e));
   }
 }
 
