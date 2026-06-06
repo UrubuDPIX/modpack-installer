@@ -123,7 +123,7 @@ async function processInstallation(
     }
     
     // Instala NeoForge se houver instalador (CurseForge Server Pack)
-    const neoForgeInstaller = (await fs.readdir(serverDir)).find(f => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+    const neoForgeInstaller = (await fs.readdir(serverDir)).find((f: string) => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
     if (neoForgeInstaller) {
       log.push(`[${new Date().toISOString()}] Instalando NeoForge (${neoForgeInstaller})...`);
       try {
@@ -131,6 +131,20 @@ async function processInstallation(
         log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
       } catch (e: any) {
         log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar NeoForge: ${e?.message || e}`);
+      }
+    }
+    
+    // Instala Forge se necessário (mods existem mas não há forge jar)
+    const hasMods = await directoryExists(path.join(serverDir, 'mods'));
+    const hasForgeJar = (await fs.readdir(serverDir)).some((f: string) => /^forge-.+\.jar$/.test(f));
+    const hasNeoForge = (await fs.readdir(serverDir)).some((f: string) => f.startsWith('neoforge-'));
+    
+    if (hasMods && !hasForgeJar && !hasNeoForge) {
+      log.push(`[${new Date().toISOString()}] Forge não detectado, instalando...`);
+      try {
+        await installForge(serverDir, version.minecraftVersion || '1.20.1', log);
+      } catch (e: any) {
+        log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar Forge: ${e?.message || e}`);
       }
     }
     
@@ -228,19 +242,19 @@ async function processInstallation(
     // Verifica se o modpack já tem conteúdo de servidor (Server Pack)
     const hasModsDir = await directoryExists(path.join(serverDir, 'mods'));
     const hasConfigDir = await directoryExists(path.join(serverDir, 'config'));
-    const hasStartupScript = (await fs.readdir(serverDir)).some(f => 
+    const hasStartupScript = (await fs.readdir(serverDir)).some((f: string) => 
       f === 'startserver.sh' || f === 'run.sh' || f === 'run.bat'
     );
-    const hasForgeJar = (await fs.readdir(serverDir)).some(f => 
+    const hasForgeUniversal = (await fs.readdir(serverDir)).some((f: string) => 
       /^forge-.+-universal\.jar$/.test(f)
     );
-    const hasNeoForge = (await fs.readdir(serverDir)).some(f => 
+    const hasNeoForgeInstaller = (await fs.readdir(serverDir)).some((f: string) => 
       f.startsWith('neoforge-') && f.endsWith('-installer.jar')
     );
-    const isServerPack = hasModsDir || hasConfigDir || hasStartupScript || hasForgeJar || hasNeoForge;
+    const isServerPack = hasModsDir || hasConfigDir || hasStartupScript || hasForgeUniversal || hasNeoForgeInstaller;
     
     if (isServerPack) {
-      log.push(`[${new Date().toISOString()}] Server Pack detectado (mods=${hasModsDir}, config=${hasConfigDir}, script=${hasStartupScript}, forge=${hasForgeJar}, neoforge=${hasNeoForge})`);
+      log.push(`[${new Date().toISOString()}] Server Pack detectado (mods=${hasModsDir}, config=${hasConfigDir}, script=${hasStartupScript}, forge=${hasForgeUniversal}, neoforge=${hasNeoForgeInstaller})`);
       log.push(`[${new Date().toISOString()}] Pulando download de server.jar vanilla`);
     }
     
@@ -689,6 +703,34 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string): P
   }
 
   return startupCommand;
+}
+
+async function installForge(serverDir: string, mcVersion: string, log: string[]): Promise<void> {
+  // Mapeamento de versões conhecidas do Forge
+  const forgeVersions: Record<string, string> = {
+    '1.12.2': '1.12.2-14.23.5.2860',
+    '1.16.5': '1.16.5-36.2.39',
+    '1.18.2': '1.18.2-40.2.0',
+    '1.19.2': '1.19.2-43.2.0',
+    '1.20.1': '1.20.1-47.2.0'
+  };
+  
+  const forgeVersion = forgeVersions[mcVersion];
+  if (!forgeVersion) {
+    throw new Error(`Versão do Forge não conhecida para Minecraft ${mcVersion}`);
+  }
+  
+  const forgeInstaller = `forge-${forgeVersion}-installer.jar`;
+  const forgeUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/${forgeInstaller}`;
+  
+  log.push(`[${new Date().toISOString()}] Baixando Forge ${forgeVersion}...`);
+  const installerPath = path.join(serverDir, forgeInstaller);
+  await downloadFile(forgeUrl, installerPath);
+  
+  log.push(`[${new Date().toISOString()}] Instalando Forge...`);
+  await execAsync(`cd ${serverDir} && java -jar ${forgeInstaller} -installServer`);
+  
+  log.push(`[${new Date().toISOString()}] Forge instalado com sucesso`);
 }
 
 async function cleanServerDir(serverDir: string): Promise<void> {
