@@ -597,9 +597,9 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
     detectedType = 'startserver.sh';
     startupCommand = 'bash startserver.sh';
   }
-  // Detector 2: run.sh (Forge/Fabric genérico)
+  // Detector 2: run.sh (Forge/Fabric genérico) - prioridade alta
   else if (files.includes('run.sh')) {
-    console.log('[Detector] run.sh encontrado');
+    console.log('[Detector] run.sh encontrado (prioridade alta)');
     detectedType = 'run.sh';
     startupCommand = 'bash run.sh';
   }
@@ -659,10 +659,10 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
       startupCommand = 'java -jar quilt-server-launch.jar nogui';
     }
   }
-  // Detector 7: Vanilla fallback
+  // Detector 7: Vanilla fallback (última opção)
   if (!startupCommand) {
     if (files.includes('server.jar')) {
-      console.log('[Detector] Vanilla server.jar encontrado');
+      console.log('[Detector] server.jar encontrado (fallback - último recurso)');
       detectedType = 'vanilla';
       startupCommand = 'java -jar server.jar nogui';
     }
