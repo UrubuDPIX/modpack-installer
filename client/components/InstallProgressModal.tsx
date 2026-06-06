@@ -51,7 +51,7 @@ export default function InstallProgressModal({
   }, [isOpen]);
 
   const handleGoToConsole = () => {
-    window.location.href = `/server/${serverId}/console`;
+    window.location.href = `/server/${serverId}`;
     onClose();
   };
 
@@ -86,7 +86,7 @@ export default function InstallProgressModal({
               onClick={handleGoToConsole}
               className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded transition-colors"
             >
-              Ir para Console
+              Ir para o Servidor
             </button>
           </div>
         ) : (
