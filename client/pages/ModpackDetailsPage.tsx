@@ -119,16 +119,17 @@ export default function ModpackDetailsPage() {
           accept_eula: acceptEula,
         }),
       });
-      const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "Falha ao instalar modpack");
+        const data = await response.json().catch(() => ({}));
+        console.error('Erro ao iniciar instalação:', data.error || response.statusText);
+        // Não fecha o modal - o polling vai mostrar o erro
       }
     } catch (err: any) {
-      alert(err.message || "Erro ao instalar modpack");
-    } finally {
-      setInstallingVersion(null);
-      setInstallVersionId(null);
+      console.error('Erro na requisição:', err);
+      // Não fecha o modal em caso de erro - o polling continua
     }
+    // O modal vai fazer polling automático para acompanhar o progresso
+    // Não limpa installingVersion aqui - deixa o modal controlar
   };
 
   const fetchDetails = async () => {

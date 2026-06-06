@@ -422,17 +422,15 @@ export default function ModpacksContainer() {
           accept_eula: acceptEula,
         }),
       });
-      if (!response.ok) throw new Error();
-      // Aguarda 30 segundos para instalacao completar
-      await new Promise(resolve => setTimeout(resolve, 30000));
-      fetchInstalledModpack();
-    } catch {
-      setShowProgressModal(false);
-    } finally {
-      setInstallingVersion(null);
-      setInstallModpackSlug(null);
-      setInstallVersionId(null);
+      if (!response.ok) {
+        console.error('Erro ao iniciar instalação:', await response.text());
+        // Não fecha o modal - deixa o usuário ver o erro
+      }
+    } catch (err) {
+      console.error('Erro na requisição:', err);
+      // Não fecha o modal em caso de erro
     }
+    // O modal vai fazer polling automático para acompanhar o progresso
   };
 
   const formatDownloads = (n?: number | null) => {
