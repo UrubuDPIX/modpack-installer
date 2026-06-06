@@ -272,13 +272,20 @@ async function processInstallation(
       });
     }
     
-    // Cria startup.sh se o modpack vier com startserver.sh ou run.sh
-    log.push(`[${new Date().toISOString()}] Verificando startup script...`);
+    // Atualiza startup command para NeoForge se necessário
+    log.push(`[${new Date().toISOString()}] Verificando startup command...`);
+    try {
+      await updateServerStartup(serverId, serverDir);
+      log.push(`[${new Date().toISOString()}] Startup command atualizado`);
+    } catch (e: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao atualizar startup command: ${e?.message || e}`);
+    }
+    
+    // Cria startup.sh wrapper como fallback
     try {
       await configureStartupScript(serverDir);
-      log.push(`[${new Date().toISOString()}] Startup script configurado`);
     } catch (e: any) {
-      log.push(`[${new Date().toISOString()}] AVISO: Falha ao configurar startup script: ${e?.message || e}`);
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao criar startup.sh: ${e?.message || e}`);
     }
     
     // Inicia servidor automaticamente
@@ -452,6 +459,34 @@ async function getPanelApiKey(): Promise<string | null> {
   }
 }
 
+async function getServerInternalId(serverId: string): Promise<string | null> {
+  const apiKey = await getPanelApiKey();
+  if (!apiKey) return null;
+
+  try {
+    // Busca todos os servidores para encontrar o ID interno pelo UUID
+    const response = await fetch('https://host.foxy-mc.com/api/application/servers', {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json() as any;
+      const servers = data.data || [];
+      const server = servers.find((s: any) => s.attributes?.uuid === serverId || s.attributes?.identifier === serverId);
+      if (server) {
+        console.log(`[API] Servidor encontrado: ID interno=${server.attributes?.id}`);
+        return String(server.attributes?.id);
+      }
+    }
+  } catch (e) {
+    console.error('[API] Falha ao buscar ID interno:', e);
+  }
+  return null;
+}
+
 async function startServer(serverId: string): Promise<void> {
   const apiKey = await getPanelApiKey();
   if (!apiKey) {
@@ -460,7 +495,7 @@ async function startServer(serverId: string): Promise<void> {
   }
 
   try {
-    // Usa a API do Pterodactyl para iniciar o servidor
+    // Client API usa UUID
     const response = await fetch(`https://host.foxy-mc.com/api/client/servers/${serverId}/power`, {
       method: 'POST',
       headers: {
@@ -479,6 +514,56 @@ async function startServer(serverId: string): Promise<void> {
     }
   } catch (e: any) {
     console.error('[AutoStart] Falha ao iniciar servidor:', e?.message || String(e));
+  }
+}
+
+async function updateServerStartup(serverId: string, serverDir: string): Promise<void> {
+  const apiKey = await getPanelApiKey();
+  if (!apiKey) {
+    console.warn('[Startup] API Key do painel não configurada.');
+    return;
+  }
+
+  const files = await fs.readdir(serverDir);
+  const neoForgeInstaller = files.find(f => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+  if (!neoForgeInstaller) return;
+
+  const match = neoForgeInstaller.match(/neoforge-(.+)-installer\.jar/);
+  if (!match) return;
+  const neoForgeVersion = match[1];
+
+  const startupCommand = `java @user_jvm_args.txt @libraries/net/neoforged/neoforge/${neoForgeVersion}/unix_args.txt nogui`;
+
+  try {
+    // Busca ID interno numérico (Application API não aceita UUID)
+    const internalId = await getServerInternalId(serverId);
+    if (!internalId) {
+      console.warn('[Startup] ID interno não encontrado, startup não atualizado.');
+      return;
+    }
+
+    console.log(`[Startup] Atualizando startup command para NeoForge ${neoForgeVersion}...`);
+
+    const response = await fetch(`https://host.foxy-mc.com/api/application/servers/${internalId}/startup`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        startup: startupCommand
+      })
+    });
+
+    if (response.ok) {
+      console.log(`[Startup] Comando de startup atualizado: ${startupCommand}`);
+    } else {
+      const errorData = await response.text();
+      console.error(`[Startup] API retornou ${response.status}: ${errorData}`);
+    }
+  } catch (e: any) {
+    console.error('[Startup] Falha ao atualizar startup:', e?.message || String(e));
   }
 }
 
