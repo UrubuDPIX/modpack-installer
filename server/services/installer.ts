@@ -617,11 +617,29 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string): P
   }
   // Detector 4: Forge universal jar (Forge antigo)
   if (!startupCommand) {
-    const forgeUniversal = files.find(f => /^forge-.+-universal\.jar$/.test(f));
+    const forgeUniversal = files.find((f: string) => /^forge-.+-universal\.jar$/.test(f));
     if (forgeUniversal) {
       console.log(`[Detector] Forge universal jar encontrado: ${forgeUniversal}`);
       detectedType = 'forge-universal';
       startupCommand = `java -jar ${forgeUniversal} nogui`;
+    }
+  }
+  // Detector 4b: Forge jar genérico (instalador criou forge-*.jar)
+  if (!startupCommand) {
+    const forgeJar = files.find((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+    if (forgeJar) {
+      console.log(`[Detector] Forge jar encontrado: ${forgeJar}`);
+      detectedType = 'forge-jar';
+      startupCommand = `java -jar ${forgeJar} nogui`;
+    }
+  }
+  // Detector 4c: Minecraft server jar (Forge 1.12.2 cria minecraft_server.x.x.jar)
+  if (!startupCommand) {
+    const mcServerJar = files.find((f: string) => /^minecraft_server\..+\.jar$/.test(f));
+    if (mcServerJar) {
+      console.log(`[Detector] Minecraft server jar encontrado: ${mcServerJar}`);
+      detectedType = 'minecraft-server';
+      startupCommand = `java -jar ${mcServerJar} nogui`;
     }
   }
   // Detector 5: Fabric server launch
