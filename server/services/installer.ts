@@ -104,15 +104,13 @@ async function processInstallation(
     log.push(`[${new Date().toISOString()}] Configurando loader: ${loaderType}...`);
     await configureLoader(serverDir, { ...version, loader: loaderType });
     
-    // Corrige permissões para o usuário pterodactyl - DEPOIS de todas as operações de arquivo
+    // Corrige permissões para o usuário pterodactyl (UID 999 no container Docker)
     log.push(`[${new Date().toISOString()}] Corrigindo permissoes...`);
     try {
-      await execAsync(`chown -R pterodactyl:pterodactyl ${serverDir}`);
-      // Garante que arquivos sejam legíveis pelo container (rwx para owner, r-x para group/others para dirs, r-- para files)
-      await execAsync(`find ${serverDir} -type d -exec chmod 755 {} +`);
-      await execAsync(`find ${serverDir} -type f -exec chmod 644 {} +`);
-      // server.jar precisa ser executável
-      await execAsync(`chmod +x ${path.join(serverDir, 'server.jar')}`).catch(() => {});
+      // Tenta chown para pterodactyl (pode falhar se user não existir no host)
+      await execAsync(`chown -R 999:999 ${serverDir} 2>/dev/null || chown -R pterodactyl:pterodactyl ${serverDir} 2>/dev/null || true`);
+      // Garante acesso total para o container ler os arquivos
+      await execAsync(`chmod -R 777 ${serverDir}`);
       log.push(`[${new Date().toISOString()}] Permissoes corrigidas com sucesso`);
     } catch (e: any) {
       log.push(`[${new Date().toISOString()}] AVISO: Falha ao corrigir permissoes: ${e?.message || e}`);
