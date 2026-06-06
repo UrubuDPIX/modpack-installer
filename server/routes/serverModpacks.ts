@@ -126,52 +126,25 @@ router.post('/:id/modpack', async (req, res) => {
         return res.status(400).json({ message: `Erro ao buscar modpack na CurseForge: ${modRes.status}` });
       }
       // Buscar arquivo (version_id é o fileId)
-      // Primeiro tenta buscar arquivo de servidor (Server Pack)
+      // Verifica se existe serverPackFileId no arquivo selecionado
       let serverFileId = version_id;
       try {
-        const allFilesRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files?pageSize=1000`, {
+        const fileInfoRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${version_id}`, {
           headers: { 'x-api-key': cfKey }
         });
-        if (allFilesRes.ok) {
-          const allFilesData = await allFilesRes.json() as any;
-          const files = allFilesData.data || [];
-          console.log(`[CurseForge] Total de arquivos: ${files.length}`);
-          // Busca todos os arquivos com 'server' ou 'files' no nome
-          const serverFiles = files.filter((f: any) => 
-            f.fileName?.toLowerCase().includes('server') || 
-            f.fileName?.toLowerCase().includes('files')
-          );
-          console.log(`[CurseForge] Arquivos de servidor encontrados: ${serverFiles.length}`);
-          serverFiles.forEach((f: any) => console.log(`[CurseForge] Server file: ${f.fileName} (ID: ${f.id})`));
-          
-          // Busca arquivo de servidor relacionado ao fileId selecionado
-          const selectedFile = files.find((f: any) => String(f.id) === String(version_id));
-          if (selectedFile) {
-            console.log(`[CurseForge] Arquivo selecionado: ${selectedFile.fileName}, gameVersion: ${selectedFile.gameVersions?.[0]}`);
-            // Tenta encontrar server pack na mesma versão do jogo
-            const gameVersion = selectedFile.gameVersions?.[0];
-            const serverFile = files.find((f: any) => 
-              f.fileName?.toLowerCase().includes('server') &&
-              f.gameVersions?.[0] === gameVersion
-            );
-            if (serverFile) {
-              console.log(`[CurseForge] Server pack encontrado: ${serverFile.fileName} (ID: ${serverFile.id})`);
-              serverFileId = serverFile.id;
-            } else if (serverFiles.length > 0) {
-              // Se não encontrou na mesma versão, pega o mais recente
-              console.log(`[CurseForge] Usando server pack mais recente: ${serverFiles[0].fileName}`);
-              serverFileId = serverFiles[0].id;
-            } else {
-              console.log(`[CurseForge] Server pack NAO encontrado`);
-            }
+        if (fileInfoRes.ok) {
+          const fileInfoData = await fileInfoRes.json() as any;
+          const fileInfo = fileInfoData.data;
+          console.log(`[CurseForge] Arquivo selecionado: ${fileInfo.fileName}`);
+          if (fileInfo.serverPackFileId) {
+            console.log(`[CurseForge] ServerPackFileId encontrado: ${fileInfo.serverPackFileId}`);
+            serverFileId = fileInfo.serverPackFileId;
           } else {
-            console.log(`[CurseForge] Arquivo selecionado ${version_id} nao encontrado na lista`);
+            console.log(`[CurseForge] ServerPackFileId NAO existe, usando arquivo padrao`);
           }
-        } else {
-          console.error(`[CurseForge] Erro ao listar arquivos: ${allFilesRes.status}`);
         }
       } catch (e) {
-        console.warn('[CurseForge] Falha ao buscar server pack, usando arquivo padrao:', e);
+        console.warn('[CurseForge] Falha ao verificar serverPackFileId:', e);
       }
 
       const fileRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${serverFileId}`, {
