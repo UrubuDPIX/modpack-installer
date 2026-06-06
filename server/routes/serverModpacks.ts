@@ -108,28 +108,33 @@ router.post('/:id/modpack', async (req, res) => {
       if (!cfKey) {
         return res.status(400).json({ message: 'Chave da API CurseForge não configurada' });
       }
-      // Buscar mod
-      const modRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}`, {
+      // Buscar mod por slug
+      const searchRes = await fetch(`https://api.curseforge.com/v1/mods/search?gameId=432&slug=${modpack_slug}`, {
         headers: { 'x-api-key': cfKey }
       });
-      if (modRes.ok) {
-        const modData = await modRes.json() as any;
-        const mod = modData.data;
-        modpackName = mod.name || modpack_slug;
-        modpackAuthor = mod.authors?.[0]?.name || 'unknown';
-        modpackDescription = mod.summary || '';
-        modpackIcon = mod.logo?.url || '';
-        modpackDownloads = mod.downloadCount || 0;
-      } else {
-        const errorText = await modRes.text();
-        console.error(`[CurseForge] Erro ao buscar mod ${modpack_slug}: ${modRes.status} - ${errorText}`);
-        return res.status(400).json({ message: `Erro ao buscar modpack na CurseForge: ${modRes.status}` });
+      let modId = null;
+      if (searchRes.ok) {
+        const searchData = await searchRes.json() as any;
+        if (searchData.data && searchData.data.length > 0) {
+          const mod = searchData.data[0];
+          modId = mod.id;
+          modpackName = mod.name || modpack_slug;
+          modpackAuthor = mod.authors?.[0]?.name || 'unknown';
+          modpackDescription = mod.summary || '';
+          modpackIcon = mod.logo?.url || '';
+          modpackDownloads = mod.downloadCount || 0;
+        }
+      }
+      
+      if (!modId) {
+        console.error(`[CurseForge] Mod não encontrado: ${modpack_slug}`);
+        return res.status(400).json({ message: `Modpack não encontrado na CurseForge: ${modpack_slug}` });
       }
       // Buscar arquivo (version_id é o fileId)
       // Verifica se existe serverPackFileId no arquivo selecionado
       let serverFileId = version_id;
       try {
-        const fileInfoRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${version_id}`, {
+        const fileInfoRes = await fetch(`https://api.curseforge.com/v1/mods/${modId}/files/${version_id}`, {
           headers: { 'x-api-key': cfKey }
         });
         if (fileInfoRes.ok) {
@@ -147,7 +152,7 @@ router.post('/:id/modpack', async (req, res) => {
         console.warn('[CurseForge] Falha ao verificar serverPackFileId:', e);
       }
 
-      const fileRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${serverFileId}`, {
+      const fileRes = await fetch(`https://api.curseforge.com/v1/mods/${modId}/files/${serverFileId}`, {
         headers: { 'x-api-key': cfKey }
       });
       if (fileRes.ok) {
@@ -164,7 +169,7 @@ router.post('/:id/modpack', async (req, res) => {
         } else {
           // Busca URL de download via endpoint específico
           try {
-            const downloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${serverFileId}/download`, {
+            const downloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modId}/files/${serverFileId}/download`, {
               headers: { 'x-api-key': cfKey }
             });
             if (downloadRes.ok) {
