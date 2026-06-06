@@ -137,10 +137,22 @@ async function processInstallation(
       // Tenta baixar server.jar vanilla como último recurso
       try {
         const mcVersion = version.minecraftVersion || '1.20.1';
-        const vanillaUrl = `https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce8290b87224b77f5484/server.jar`; // 1.20.1 fallback
-        log.push(`[${new Date().toISOString()}] Tentando download fallback do server.jar...`);
-        await downloadFile(vanillaUrl, serverJarPath);
-        log.push(`[${new Date().toISOString()}] server.jar fallback baixado`);
+        log.push(`[${new Date().toISOString()}] Tentando download fallback do server.jar (MC ${mcVersion})...`);
+        // Busca URL correta do server.jar na API do Mojang
+        const manifestRes = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
+        const manifest = await manifestRes.json() as any;
+        const versionInfo = manifest.versions.find((v: any) => v.id === mcVersion);
+        if (!versionInfo) {
+          throw new Error(`Versão ${mcVersion} não encontrada no manifesto Mojang`);
+        }
+        const versionJsonRes = await fetch(versionInfo.url);
+        const versionJson = await versionJsonRes.json() as any;
+        const serverUrl = versionJson.downloads?.server?.url;
+        if (!serverUrl) {
+          throw new Error('URL do server.jar não disponível no manifesto');
+        }
+        await downloadFile(serverUrl, serverJarPath);
+        log.push(`[${new Date().toISOString()}] server.jar fallback baixado: ${mcVersion}`);
       } catch (e: any) {
         log.push(`[${new Date().toISOString()}] ERRO CRÍTICO: Não foi possível obter server.jar: ${e?.message || e}`);
         throw new Error('server.jar não encontrado após instalação');
