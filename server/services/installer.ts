@@ -6,6 +6,18 @@ import fs from 'fs/promises';
 
 const execAsync = promisify(exec);
 
+// Categorias do CurseForge que indicam mods client-side (não devem ir pro servidor)
+const CF_CLIENT_SIDE_CATEGORIES = [
+  422, // Mapas e Minimaps (JourneyMap, Xaero's)
+  421, // Customização de Chat
+  424, // UI e HUD
+  4642, // Otimizações Gráficas (Sodium, Iris)
+  4555, // Shaders
+  4455, // Resource Packs
+  4460, // Utility & QoL (alguns são client-only)
+  4475, // Performance
+];
+
 interface InstallResult {
   jobId: string;
 }
@@ -177,8 +189,29 @@ async function processInstallation(
                 let modFileName = `${modInfo.projectID}_${modInfo.fileID}.jar`;
                 if (cfKey) {
                   try {
-                    // Busca dados do arquivo para obter nome correto e URL
-                    log.push(`[${new Date().toISOString()}] [CurseForge] Buscando mod ${modInfo.projectID}/${modInfo.fileID}...`);
+                    // Busca dados do MOD para verificar se é client-side (categorias)
+                    log.push(`[${new Date().toISOString()}] [CurseForge] Verificando mod ${modInfo.projectID}...`);
+                    const modMetaRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}`, {
+                      headers: { 'x-api-key': cfKey }
+                    });
+                    
+                    if (modMetaRes.ok) {
+                      const modMeta = await modMetaRes.json() as any;
+                      const modDetails = modMeta.data;
+                      
+                      // Verifica se o mod pertence a categorias client-side
+                      const isClientSide = modDetails.categories?.some((cat: any) => 
+                        CF_CLIENT_SIDE_CATEGORIES.includes(cat.id)
+                      );
+                      
+                      if (isClientSide) {
+                        log.push(`[${new Date().toISOString()}] [CurseForge] IGNORADO (Client-Side): ${modDetails.name}`);
+                        continue; // Pula o download deste mod
+                      }
+                    }
+                    
+                    // Busca dados do ARQUIVO para obter nome correto e URL
+                    log.push(`[${new Date().toISOString()}] [CurseForge] Buscando arquivo ${modInfo.projectID}/${modInfo.fileID}...`);
                     const fileDataRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}`, {
                       headers: { 'x-api-key': cfKey }
                     });
@@ -452,8 +485,14 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
     const indexContent = await fs.readFile(indexPath, 'utf-8');
     const index = JSON.parse(indexContent);
     
-    // Baixa cada arquivo listado no index
+    // Baixa cada arquivo listado no index (ignora mods client-side)
     for (const file of index.files || []) {
+      // Verifica se é mod client-side (env.server === 'unsupported')
+      if (file.env?.server === 'unsupported') {
+        console.log(`[Modrinth] IGNORADO (Client-Side): ${file.path}`);
+        continue; // Pula o download deste mod
+      }
+      
       if (file.downloads && file.downloads.length > 0) {
         const filePath = path.join(serverDir, file.path);
         const fileDir = path.dirname(filePath);
