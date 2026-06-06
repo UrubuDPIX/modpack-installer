@@ -4,6 +4,11 @@ import modpackRoutes from './routes/modpacks';
 import serverModpackRoutes from './routes/serverModpacks';
 import adminSettingsRoutes from './routes/adminSettings';
 
+// Patch global de serialização de BigInt para Express/JSON.stringify
+(BigInt.prototype as any).toJSON = function () {
+  return Number(this);
+};
+
 const app = express();
 const prisma = new PrismaClient();
 
