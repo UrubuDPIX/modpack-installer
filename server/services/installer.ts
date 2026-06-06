@@ -260,27 +260,18 @@ async function getPanelApiKey(): Promise<string | null> {
 }
 
 async function startServer(serverId: string): Promise<void> {
-  const panelKey = await getPanelApiKey();
-  if (!panelKey) {
-    console.log('[AutoStart] API key do painel nao configurada');
-    return;
-  }
-
-  const panelUrl = process.env.PANEL_URL || 'https://host.foxy-mc.com';
-  
-  const response = await fetch(`${panelUrl}/api/client/servers/${serverId}/power`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${panelKey}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify({ signal: 'start' })
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`HTTP ${response.status}: ${text}`);
+  // Tenta iniciar via Docker (Wings)
+  try {
+    await execAsync(`docker start ${serverId}`);
+    console.log(`[AutoStart] Servidor ${serverId} iniciado via Docker`);
+  } catch (e: any) {
+    // Se falhar, tenta via systemctl ( Wings service )
+    try {
+      await execAsync(`systemctl start wings`);
+      console.log('[AutoStart] Wings iniciado');
+    } catch {
+      console.error('[AutoStart] Falha ao iniciar servidor:', e?.message || String(e));
+    }
   }
 }
 
