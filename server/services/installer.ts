@@ -59,6 +59,13 @@ async function processInstallation(
   version: any
 ) {
   const log: string[] = [];
+  const originalPush = log.push;
+  log.push = function(...args: string[]) {
+    for (const arg of args) {
+      console.log(arg);
+    }
+    return originalPush.apply(log, args);
+  };
   
   try {
     log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.version}`);
@@ -154,7 +161,8 @@ async function processInstallation(
     // Se tiver manifest.json (CurseForge), baixa mods individualmente
     const manifestPath = path.join(serverDir, 'manifest.json');
     const modsDir = path.join(serverDir, 'mods');
-    if (await fileExists(manifestPath) && !await directoryExists(modsDir)) {
+    const modsEmpty = !await directoryExists(modsDir) || (await fs.readdir(modsDir)).length === 0;
+    if (await fileExists(manifestPath) && modsEmpty) {
       log.push(`[${new Date().toISOString()}] Detectado manifest.json, baixando mods...`);
       try {
         const manifestContent = await fs.readFile(manifestPath, 'utf-8');
