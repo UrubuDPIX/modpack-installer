@@ -232,6 +232,10 @@ async function processInstallation(
       }
     }
     
+    // Remove mods client-side que podem causar crashes no servidor
+    log.push(`[${new Date().toISOString()}] Removendo mods client-side...`);
+    await removeClientSideMods(modsDir, log);
+    
     // Configurações específicas do loader (usa modloader do modpack)
     const loaderType = version.modpack?.modloader || version.loader || 'Forge';
     log.push(`[${new Date().toISOString()}] Configurando loader: ${loaderType}...`);
@@ -932,4 +936,133 @@ function getTruncatedLog(logArray: string[]): string {
     return `[... LOG TRUNCADO DEVIDO AO TAMANHO DE MODPACK MUITO GRANDE ...]\n\n` + fullLog.substring(fullLog.length - 60000);
   }
   return fullLog;
+}
+
+async function removeClientSideMods(modsDir: string, log: string[]): Promise<void> {
+  // Lista de padrões de nomes de mods client-side comuns
+  const clientSidePatterns = [
+    'colorwheel_patcher',
+    'colorwheel',
+    'replaymod',
+    'iris',
+    'sodium',
+    'zoom',
+    'journeymap',
+    'xaero',
+    'optifine',
+    'optifabric',
+    'wthit',
+    'jade',
+    'appleskin',
+    'litematica',
+    'minihud',
+    'tweakeroo',
+    'itemscroller',
+    'wdl',
+    'worlddownloader',
+    'nvidium',
+    'moreculling',
+    'entityculling',
+    'betterfps',
+    'foamfix',
+    'texfix',
+    'vanillaenhancements',
+    'voxelmap',
+    'antiqueatlas',
+    'craftpresence',
+    'discordrpc',
+    'lambdynlights',
+    'okzoomer',
+    'roughlyenoughitems',
+    'emi',
+    'jei', // JEI pode ser usado em servidor, mas geralmente é opcional
+    'controlling',
+    'modmenu',
+    'shulkerboxtooltip',
+    'wawla',
+    'hwyla',
+    'theoneprobe',
+    'neat',
+    'torohealth',
+    'damageindicators',
+    'armorhud',
+    'durabilityviewer',
+    'inventoryhud',
+    'itemphysic',
+    'soundfilters',
+    'soundphysics',
+    'dynamic surroundings',
+    'ambientsounds',
+    'biomeinfo',
+    'FPS-Monitor',
+    'debugify',
+    'midnightlib',
+    'yacl',
+    'yet_another_config_lib',
+    'cloth-config',
+    'authme',
+    'reauth',
+    'tlauncher',
+    'tl_skin',
+    'waveycapes',
+    'capes',
+    'cosmetic',
+    'skin',
+    '3dskin',
+    'citresewn',
+    'continuity',
+    'enhancedblockentities',
+    'entitytexturefeatures',
+    'fallingleaves',
+    'visuality',
+    'clear-skies',
+    'custom-splash-screen',
+    'fancymenu',
+    'konkrete',
+    'melody',
+    'loadmyresources',
+    'respackopts',
+    'rrls',
+    'remove-reloading-screen',
+    'smoke-suppression',
+    'smooth-boot',
+    'sparkweave',
+    'starlight',
+    'lazydfu',
+    'ferrite-core',
+    'c2me' // C2ME é server-side, mas pode causar problemas em alguns casos
+  ];
+  
+  try {
+    if (!await directoryExists(modsDir)) {
+      return;
+    }
+    
+    const files = await fs.readdir(modsDir);
+    const removed: string[] = [];
+    
+    for (const file of files) {
+      if (!file.endsWith('.jar')) continue;
+      
+      const lowerFile = file.toLowerCase();
+      const isClientSide = clientSidePatterns.some(pattern => 
+        lowerFile.includes(pattern.toLowerCase())
+      );
+      
+      if (isClientSide) {
+        const filePath = path.join(modsDir, file);
+        await fs.unlink(filePath);
+        removed.push(file);
+        log.push(`[${new Date().toISOString()}] [ClientSide] Removido: ${file}`);
+      }
+    }
+    
+    if (removed.length > 0) {
+      log.push(`[${new Date().toISOString()}] [ClientSide] Total de mods client-side removidos: ${removed.length}`);
+    } else {
+      log.push(`[${new Date().toISOString()}] [ClientSide] Nenhum mod client-side detectado`);
+    }
+  } catch (e: any) {
+    log.push(`[${new Date().toISOString()}] [ClientSide] AVISO: Falha ao remover mods client-side: ${e.message}`);
+  }
 }
