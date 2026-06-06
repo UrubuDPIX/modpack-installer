@@ -427,7 +427,6 @@ export default function ModpacksContainer() {
       await new Promise(resolve => setTimeout(resolve, 30000));
       fetchInstalledModpack();
     } catch {
-      alert("Erro ao instalar modpack");
       setShowProgressModal(false);
     } finally {
       setInstallingVersion(null);
