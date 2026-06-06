@@ -85,9 +85,23 @@ async function processInstallation(
     
     // Download do modpack
     log.push(`[${new Date().toISOString()}] Baixando modpack...`);
+    log.push(`[${new Date().toISOString()}] URL: ${version.download_url || 'VAZIA'}`);
     const downloadPath = path.join(serverDir, 'modpack.zip');
+    
+    if (!version.download_url) {
+      log.push(`[${new Date().toISOString()}] ERRO: URL de download vazia!`);
+      throw new Error('URL de download não disponível');
+    }
+    
     await downloadFile(version.download_url, downloadPath);
-    log.push(`[${new Date().toISOString()}] Download concluído: ${version.file_size}`);
+    
+    // Verifica se o arquivo foi baixado
+    const stats = await fs.stat(downloadPath).catch(() => null);
+    if (!stats || stats.size === 0) {
+      log.push(`[${new Date().toISOString()}] ERRO: Arquivo baixado está vazio!`);
+      throw new Error('Arquivo de modpack vazio');
+    }
+    log.push(`[${new Date().toISOString()}] Download concluído: ${stats.size} bytes`);
     
     // Extrai modpack
     log.push(`[${new Date().toISOString()}] Extraindo arquivos...`);
