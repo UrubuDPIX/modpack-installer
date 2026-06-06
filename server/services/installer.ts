@@ -136,7 +136,7 @@ async function processInstallation(
     
     // Instala Forge se necessário (mods existem mas não há forge jar)
     const hasMods = await directoryExists(path.join(serverDir, 'mods'));
-    const hasForgeJar = (await fs.readdir(serverDir)).some((f: string) => /^forge-.+\.jar$/.test(f));
+    const hasForgeJar = (await fs.readdir(serverDir)).some((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
     const hasNeoForge = (await fs.readdir(serverDir)).some((f: string) => f.startsWith('neoforge-'));
     
     if (hasMods && !hasForgeJar && !hasNeoForge) {
