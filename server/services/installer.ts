@@ -161,9 +161,8 @@ async function processInstallation(
     // Se tiver manifest.json (CurseForge), baixa mods individualmente
     const manifestPath = path.join(serverDir, 'manifest.json');
     const modsDir = path.join(serverDir, 'mods');
-    const modsEmpty = !await directoryExists(modsDir) || (await fs.readdir(modsDir)).length === 0;
-    if (await fileExists(manifestPath) && modsEmpty) {
-      log.push(`[${new Date().toISOString()}] Detectado manifest.json, baixando mods...`);
+    if (await fileExists(manifestPath)) {
+      log.push(`[${new Date().toISOString()}] Detectado manifest.json, processando downloads de mods...`);
       try {
         const manifestContent = await fs.readFile(manifestPath, 'utf-8');
         const manifest = JSON.parse(manifestContent);
