@@ -137,14 +137,29 @@ router.post('/:id/modpack', async (req, res) => {
         const rawLoader = file.sortableGameVersions?.find((v: any) => ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(v.gameVersionName))?.gameVersionName || 'Forge';
         loader = ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(rawLoader) ? rawLoader : 'Forge';
         loaderVersion = rawLoader;
-        // CurseForge nem sempre retorna downloadUrl, tenta fallback
+        // CurseForge nem sempre retorna downloadUrl, tenta endpoint /download
         if (file.downloadUrl) {
           downloadUrl = file.downloadUrl;
-        } else if (file.id && file.fileName) {
-          const idStr = String(file.id);
-          const part1 = idStr.substring(0, idStr.length - 3) || '0';
-          const part2 = idStr.substring(idStr.length - 3).padStart(3, '0');
-          downloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${file.fileName}`;
+        } else {
+          // Busca URL de download via endpoint específico
+          try {
+            const downloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${version_id}/download`, {
+              headers: { 'x-api-key': cfKey }
+            });
+            if (downloadRes.ok) {
+              const downloadData = await downloadRes.json() as any;
+              downloadUrl = downloadData.data?.url || '';
+            }
+          } catch (e) {
+            console.warn('[CurseForge] Falha ao buscar URL de download:', e);
+          }
+          // Fallback manual se a API também não retornar
+          if (!downloadUrl && file.id && file.fileName) {
+            const idStr = String(file.id);
+            const part1 = idStr.substring(0, idStr.length - 3) || '0';
+            const part2 = idStr.substring(idStr.length - 3).padStart(3, '0');
+            downloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${file.fileName}`;
+          }
         }
         fileSize = String(file.fileLength || 0);
         releasedAt = new Date(file.fileDate) || new Date();
