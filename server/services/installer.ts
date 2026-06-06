@@ -216,9 +216,28 @@ async function processInstallation(
       log.push(`[${new Date().toISOString()}] AVISO: Falha ao corrigir permissoes: ${e?.message || e}`);
     }
     
+    // Verifica se o modpack já tem conteúdo de servidor (Server Pack)
+    const hasModsDir = await directoryExists(path.join(serverDir, 'mods'));
+    const hasConfigDir = await directoryExists(path.join(serverDir, 'config'));
+    const hasStartupScript = (await fs.readdir(serverDir)).some(f => 
+      f === 'startserver.sh' || f === 'run.sh' || f === 'run.bat'
+    );
+    const hasForgeJar = (await fs.readdir(serverDir)).some(f => 
+      /^forge-.+-universal\.jar$/.test(f)
+    );
+    const hasNeoForge = (await fs.readdir(serverDir)).some(f => 
+      f.startsWith('neoforge-') && f.endsWith('-installer.jar')
+    );
+    const isServerPack = hasModsDir || hasConfigDir || hasStartupScript || hasForgeJar || hasNeoForge;
+    
+    if (isServerPack) {
+      log.push(`[${new Date().toISOString()}] Server Pack detectado (mods=${hasModsDir}, config=${hasConfigDir}, script=${hasStartupScript}, forge=${hasForgeJar}, neoforge=${hasNeoForge})`);
+      log.push(`[${new Date().toISOString()}] Pulando download de server.jar vanilla`);
+    }
+    
     // Verifica se server.jar existe - ESSENCIAL para iniciar
     const serverJarPath = path.join(serverDir, 'server.jar');
-    if (!await directoryExists(serverJarPath)) {
+    if (!isServerPack && !await fileExists(serverJarPath)) {
       log.push(`[${new Date().toISOString()}] AVISO: server.jar não encontrado após configuração!`);
       // Tenta baixar server.jar vanilla como último recurso
       try {
@@ -243,8 +262,17 @@ async function processInstallation(
         log.push(`[${new Date().toISOString()}] ERRO CRÍTICO: Não foi possível obter server.jar: ${e?.message || e}`);
         throw new Error('server.jar não encontrado após instalação');
       }
-    } else {
+    } else if (!isServerPack) {
       log.push(`[${new Date().toISOString()}] server.jar verificado com sucesso`);
+    }
+    
+    // Aceita EULA automaticamente
+    const eulaPath = path.join(serverDir, 'eula.txt');
+    try {
+      await fs.writeFile(eulaPath, 'eula=true\n');
+      log.push(`[${new Date().toISOString()}] EULA aceita automaticamente`);
+    } catch (e: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao escrever eula.txt: ${e?.message || e}`);
     }
     
     // Restaura mundo se existir backup
