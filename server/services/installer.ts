@@ -134,12 +134,13 @@ async function processInstallation(
       }
     }
     
-    // Instala Forge se necessário (mods existem mas não há forge jar)
+    // Instala Forge se necessário (mods existem, o loader é Forge, mas não há forge jar)
     const hasMods = await directoryExists(path.join(serverDir, 'mods'));
     const hasForgeJar = (await fs.readdir(serverDir)).some((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
     const hasNeoForge = (await fs.readdir(serverDir)).some((f: string) => f.startsWith('neoforge-'));
+    const isForgeLoader = (version.modpack?.modloader || version.loader || '').toLowerCase().includes('forge') && !(version.modpack?.modloader || version.loader || '').toLowerCase().includes('neoforge');
     
-    if (hasMods && !hasForgeJar && !hasNeoForge) {
+    if (hasMods && !hasForgeJar && !hasNeoForge && isForgeLoader) {
       log.push(`[${new Date().toISOString()}] Forge não detectado, instalando...`);
       try {
         const mcVersion = await detectMinecraftVersion(serverDir, version);
@@ -341,7 +342,7 @@ async function processInstallation(
     log.push(`[${new Date().toISOString()}] Detectando tipo de modpack e configurando startup...`);
     try {
       const mcVersion = await detectMinecraftVersion(serverDir, version);
-      const startupCmd = await detectAndConfigureStartup(serverId, serverDir, mcVersion);
+      const startupCmd = await detectAndConfigureStartup(serverId, serverDir, mcVersion, version);
       if (startupCmd) {
         log.push(`[${new Date().toISOString()}] Startup configurado: ${startupCmd}`);
       } else {
@@ -580,7 +581,7 @@ async function startServer(serverId: string): Promise<void> {
   }
 }
 
-async function detectAndConfigureStartup(serverId: string, serverDir: string, mcVersion: string): Promise<string | null> {
+async function detectAndConfigureStartup(serverId: string, serverDir: string, mcVersion: string, version?: any): Promise<string | null> {
   const apiKey = await getPanelApiKey();
   if (!apiKey) {
     console.warn('[Startup] API Key do painel não configurada.');
@@ -591,15 +592,60 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
   let startupCommand: string | null = null;
   let detectedType = 'unknown';
 
+  // Detecta tipo de modpack pelo nome/arquivos
+  let modpackType = 'unknown';
+  
+  // Tenta puxar o modloader direto do objeto version fornecido pelo banco de dados / frontend
+  if (version) {
+    const loaderFromVer = (version.modpack?.modloader || version.loader || '').toLowerCase();
+    if (loaderFromVer.includes('fabric')) modpackType = 'fabric';
+    else if (loaderFromVer.includes('neoforge')) modpackType = 'neoforge';
+    else if (loaderFromVer.includes('forge')) modpackType = 'forge';
+    else if (loaderFromVer.includes('quilt')) modpackType = 'quilt';
+    else if (loaderFromVer.includes('vanilla')) modpackType = 'vanilla';
+  }
+
+  try {
+    const manifestPath = path.join(serverDir, 'manifest.json');
+    if (modpackType === 'unknown' && await fileExists(manifestPath)) {
+      const content = await fs.readFile(manifestPath, 'utf-8');
+      const manifest = JSON.parse(content);
+      const modpackName = (manifest.name || '').toLowerCase();
+      if (modpackName.includes('bettermc')) modpackType = 'fabric';
+      if (modpackName.includes('homestead')) modpackType = 'fabric';
+      if (modpackName.includes('fabric')) modpackType = 'fabric';
+      if (modpackName.includes('forge')) modpackType = 'forge';
+      if (modpackName.includes('neoforge')) modpackType = 'neoforge';
+    }
+    
+    // Detecta tipo verificando mods no diretório
+    if (modpackType === 'unknown' && await directoryExists(path.join(serverDir, 'mods'))) {
+      const modFiles = await fs.readdir(path.join(serverDir, 'mods'));
+      const hasFabricMods = modFiles.some((f: string) => f.includes('fabric') || f.includes('cloth'));
+      const hasForgeMods = modFiles.some((f: string) => f.includes('forge') || f.includes('ftb'));
+      
+      if (hasFabricMods && !hasForgeMods) modpackType = 'fabric';
+      if (hasForgeMods && !hasFabricMods) modpackType = 'forge';
+    }
+  } catch (e) {
+    // ignora
+  }
+
   // Detector 1: startserver.sh (NeoForge/Forge Server Pack)
   if (files.includes('startserver.sh')) {
     console.log('[Detector] startserver.sh encontrado');
     detectedType = 'startserver.sh';
     startupCommand = 'bash startserver.sh';
   }
-  // Detector 2: run.sh (Forge/Fabric genérico) - prioridade alta
+  // Detector 2: Fabric server.jar (prioridade para modpacks Fabric)
+  if (!startupCommand && files.includes('server.jar') && modpackType === 'fabric') {
+    console.log('[Detector] Fabric server.jar encontrado (prioridade para modpack Fabric)');
+    detectedType = 'fabric-server';
+    startupCommand = 'java -jar server.jar nogui';
+  }
+  // Detector 3: run.sh (Forge/Fabric genérico)
   else if (files.includes('run.sh')) {
-    console.log('[Detector] run.sh encontrado (prioridade alta)');
+    console.log('[Detector] run.sh encontrado');
     detectedType = 'run.sh';
     startupCommand = 'bash run.sh';
   }
