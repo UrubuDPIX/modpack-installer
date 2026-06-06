@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useHistory } from 'react-router-dom';
 
 interface InstallProgressModalProps {
   modpackTitle: string;
@@ -17,7 +16,6 @@ export default function InstallProgressModal({
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('Iniciando instalação...');
   const [isComplete, setIsComplete] = useState(false);
-  const history = useHistory();
 
   useEffect(() => {
     if (!isOpen) {
@@ -53,7 +51,7 @@ export default function InstallProgressModal({
   }, [isOpen]);
 
   const handleGoToConsole = () => {
-    history.push(`/server/${serverId}/console`);
+    window.location.href = `/server/${serverId}/console`;
     onClose();
   };
 
