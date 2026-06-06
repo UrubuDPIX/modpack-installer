@@ -136,8 +136,11 @@ router.post('/:id/modpack', async (req, res) => {
           const allFilesData = await allFilesRes.json() as any;
           const files = allFilesData.data || [];
           console.log(`[CurseForge] Total de arquivos: ${files.length}`);
-          // Busca todos os arquivos com 'server' no nome
-          const serverFiles = files.filter((f: any) => f.fileName?.toLowerCase().includes('server'));
+          // Busca todos os arquivos com 'server' ou 'files' no nome
+          const serverFiles = files.filter((f: any) => 
+            f.fileName?.toLowerCase().includes('server') || 
+            f.fileName?.toLowerCase().includes('files')
+          );
           console.log(`[CurseForge] Arquivos de servidor encontrados: ${serverFiles.length}`);
           serverFiles.forEach((f: any) => console.log(`[CurseForge] Server file: ${f.fileName} (ID: ${f.id})`));
           
