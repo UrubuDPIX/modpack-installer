@@ -327,7 +327,7 @@ async function processInstallation(
         where: { id: record.id },
         data: {
           status: 'installed',
-          install_log: log.join('\n'),
+          install_log: getTruncatedLog(log),
           updated_at: new Date()
         }
       });
@@ -379,7 +379,7 @@ async function processInstallation(
         where: { id: record.id },
         data: {
           status: 'error',
-          install_log: log.join('\n'),
+          install_log: getTruncatedLog(log),
           updated_at: new Date()
         }
       });
@@ -906,4 +906,12 @@ async function getCurseForgeKey(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function getTruncatedLog(logArray: string[]): string {
+  const fullLog = logArray.join('\n');
+  if (fullLog.length > 60000) {
+    return `[... LOG TRUNCADO DEVIDO AO TAMANHO DE MODPACK MUITO GRANDE ...]\n\n` + fullLog.substring(fullLog.length - 60000);
+  }
+  return fullLog;
 }
