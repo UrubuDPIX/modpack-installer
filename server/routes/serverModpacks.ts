@@ -129,14 +129,18 @@ router.post('/:id/modpack', async (req, res) => {
       // Primeiro tenta buscar arquivo de servidor (Server Pack)
       let serverFileId = version_id;
       try {
-        const allFilesRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files?pageSize=50`, {
+        const allFilesRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files?pageSize=1000`, {
           headers: { 'x-api-key': cfKey }
         });
         if (allFilesRes.ok) {
           const allFilesData = await allFilesRes.json() as any;
           const files = allFilesData.data || [];
           console.log(`[CurseForge] Total de arquivos: ${files.length}`);
-          files.forEach((f: any) => console.log(`[CurseForge] Arquivo: ${f.fileName} (ID: ${f.id}, Versao: ${f.gameVersions?.[0]})`));
+          // Busca todos os arquivos com 'server' no nome
+          const serverFiles = files.filter((f: any) => f.fileName?.toLowerCase().includes('server'));
+          console.log(`[CurseForge] Arquivos de servidor encontrados: ${serverFiles.length}`);
+          serverFiles.forEach((f: any) => console.log(`[CurseForge] Server file: ${f.fileName} (ID: ${f.id})`));
+          
           // Busca arquivo de servidor relacionado ao fileId selecionado
           const selectedFile = files.find((f: any) => String(f.id) === String(version_id));
           if (selectedFile) {
@@ -150,8 +154,12 @@ router.post('/:id/modpack', async (req, res) => {
             if (serverFile) {
               console.log(`[CurseForge] Server pack encontrado: ${serverFile.fileName} (ID: ${serverFile.id})`);
               serverFileId = serverFile.id;
+            } else if (serverFiles.length > 0) {
+              // Se não encontrou na mesma versão, pega o mais recente
+              console.log(`[CurseForge] Usando server pack mais recente: ${serverFiles[0].fileName}`);
+              serverFileId = serverFiles[0].id;
             } else {
-              console.log(`[CurseForge] Server pack NAO encontrado para versao ${gameVersion}`);
+              console.log(`[CurseForge] Server pack NAO encontrado`);
             }
           } else {
             console.log(`[CurseForge] Arquivo selecionado ${version_id} nao encontrado na lista`);
