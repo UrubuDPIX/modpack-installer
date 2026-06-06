@@ -142,7 +142,9 @@ async function processInstallation(
     if (hasMods && !hasForgeJar && !hasNeoForge) {
       log.push(`[${new Date().toISOString()}] Forge não detectado, instalando...`);
       try {
-        await installForge(serverDir, version.minecraftVersion || '1.20.1', log);
+        const mcVersion = await detectMinecraftVersion(serverDir, version);
+        log.push(`[${new Date().toISOString()}] Versão Minecraft detectada: ${mcVersion}`);
+        await installForge(serverDir, mcVersion, log);
       } catch (e: any) {
         log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar Forge: ${e?.message || e}`);
       }
@@ -705,6 +707,38 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string): P
   return startupCommand;
 }
 
+async function detectMinecraftVersion(serverDir: string, version: any): Promise<string> {
+  // 1. Tenta usar versao do banco de dados
+  if (version.minecraftVersion) {
+    return version.minecraftVersion;
+  }
+  
+  // 2. Tenta extrair do manifest.json do modpack
+  try {
+    const manifestPath = path.join(serverDir, 'manifest.json');
+    if (await fileExists(manifestPath)) {
+      const content = await fs.readFile(manifestPath, 'utf-8');
+      const manifest = JSON.parse(content);
+      if (manifest.minecraft?.version) {
+        return manifest.minecraft.version;
+      }
+    }
+  } catch (e) {
+    // ignora
+  }
+  
+  // 3. Tenta inferir pelo nome do modpack
+  const modpackName = (version.modpack?.name || '').toLowerCase();
+  if (modpackName.includes('rlcraft')) return '1.12.2';
+  if (modpackName.includes('skyfactory') && modpackName.includes('4')) return '1.12.2';
+  if (modpackName.includes('atm10') || modpackName.includes('all the mods 10')) return '1.21.1';
+  if (modpackName.includes('atm9') || modpackName.includes('all the mods 9')) return '1.20.1';
+  if (modpackName.includes('atm8') || modpackName.includes('all the mods 8')) return '1.19.2';
+  
+  // 4. Fallback padrao
+  return '1.20.1';
+}
+
 async function installForge(serverDir: string, mcVersion: string, log: string[]): Promise<void> {
   // Mapeamento de versões conhecidas do Forge
   const forgeVersions: Record<string, string> = {
@@ -714,6 +748,12 @@ async function installForge(serverDir: string, mcVersion: string, log: string[])
     '1.19.2': '1.19.2-43.2.0',
     '1.20.1': '1.20.1-47.2.0'
   };
+  
+  // Se nao encontrou versao, usa 1.12.2 como fallback (RLCraft)
+  if (!forgeVersions[mcVersion]) {
+    log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada, usando Forge 1.12.2 como fallback`);
+    return await installForge(serverDir, '1.12.2', log);
+  }
   
   const forgeVersion = forgeVersions[mcVersion];
   if (!forgeVersion) {
