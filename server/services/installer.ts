@@ -503,22 +503,8 @@ async function updateServerStartup(serverId: string, serverDir: string): Promise
 
   try {
     console.log(`[Startup] Atualizando startup command para NeoForge ${neoForgeVersion}...`);
-    
-    // Obtém dados do servidor para pegar a egg ID
-    const serverRes = await fetch(`https://host.foxy-mc.com/api/application/servers/${serverId}`, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'application/json'
-      }
-    });
-    
-    let eggId = 1;
-    if (serverRes.ok) {
-      const serverData = await serverRes.json() as any;
-      eggId = serverData.attributes?.egg || 1;
-    }
 
-    const response = await fetch(`https://host.foxy-mc.com/api/application/servers/${serverId}/startup`, {
+    const response = await fetch(`https://host.foxy-mc.com/api/application/servers/${serverId}`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -526,14 +512,7 @@ async function updateServerStartup(serverId: string, serverDir: string): Promise
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        startup: startupCommand,
-        environment: {
-          SERVER_JARFILE: 'server.jar',
-          BUILD_NUMBER: 'latest',
-          BUILD_TYPE: 'recommended'
-        },
-        egg: eggId,
-        skip_scripts: false
+        startup: startupCommand
       })
     });
 
