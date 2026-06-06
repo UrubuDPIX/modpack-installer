@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from "react";
+import InstallProgressModal from "./InstallProgressModal";
 import { useHistory, useRouteMatch } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -116,6 +117,8 @@ export default function ModpacksContainer() {
   const [installModpackDownloads, setInstallModpackDownloads] = useState<number>(0);
   const [deleteServerFiles, setDeleteServerFiles] = useState(false);
   const [acceptEula, setAcceptEula] = useState(false);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [progressModpackTitle, setProgressModpackTitle] = useState('');
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
 
   // Use ref to always have current provider in async callbacks
@@ -405,6 +408,8 @@ export default function ModpacksContainer() {
     }
     setInstallingVersion(installVersionId);
     setShowInstallModal(false);
+    setShowProgressModal(true);
+    setProgressModpackTitle(installModpackTitle || 'Modpack');
     try {
       const response = await fetch(`/api/client/servers/${id}/modpack`, {
         method: "POST",
@@ -418,10 +423,12 @@ export default function ModpacksContainer() {
         }),
       });
       if (!response.ok) throw new Error();
-      alert("Modpack agendado para instalação!");
+      // Aguarda 30 segundos para instalacao completar
+      await new Promise(resolve => setTimeout(resolve, 30000));
       fetchInstalledModpack();
     } catch {
       alert("Erro ao instalar modpack");
+      setShowProgressModal(false);
     } finally {
       setInstallingVersion(null);
       setInstallModpackSlug(null);
@@ -763,6 +770,14 @@ export default function ModpacksContainer() {
         </div>
       </div>
     )}
+
+    {/* Progress Modal */}
+    <InstallProgressModal
+      modpackTitle={progressModpackTitle}
+      isOpen={showProgressModal}
+      onClose={() => setShowProgressModal(false)}
+      serverId={id || ''}
+    />
     </>
   );
 }
