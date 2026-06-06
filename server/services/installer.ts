@@ -93,10 +93,6 @@ async function processInstallation(
     log.push(`[${new Date().toISOString()}] Extraindo arquivos...`);
     await execAsync(`cd ${serverDir} && unzip -o modpack.zip && rm modpack.zip`);
     
-    // Corrige permissões para o usuário pterodactyl
-    log.push(`[${new Date().toISOString()}] Corrigindo permissoes...`);
-    await execAsync(`chown -R pterodactyl:pterodactyl ${serverDir}`);
-    
     // Move arquivos do server pack se existir
     const overridesDir = path.join(serverDir, 'overrides');
     if (await directoryExists(overridesDir)) {
@@ -107,6 +103,20 @@ async function processInstallation(
     const loaderType = version.modpack?.modloader || version.loader || 'Forge';
     log.push(`[${new Date().toISOString()}] Configurando loader: ${loaderType}...`);
     await configureLoader(serverDir, { ...version, loader: loaderType });
+    
+    // Corrige permissões para o usuário pterodactyl - DEPOIS de todas as operações de arquivo
+    log.push(`[${new Date().toISOString()}] Corrigindo permissoes...`);
+    try {
+      await execAsync(`chown -R pterodactyl:pterodactyl ${serverDir}`);
+      // Garante que arquivos sejam legíveis pelo container (rwx para owner, r-x para group/others para dirs, r-- para files)
+      await execAsync(`find ${serverDir} -type d -exec chmod 755 {} +`);
+      await execAsync(`find ${serverDir} -type f -exec chmod 644 {} +`);
+      // server.jar precisa ser executável
+      await execAsync(`chmod +x ${path.join(serverDir, 'server.jar')}`).catch(() => {});
+      log.push(`[${new Date().toISOString()}] Permissoes corrigidas com sucesso`);
+    } catch (e: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao corrigir permissoes: ${e?.message || e}`);
+    }
     
     // Verifica se server.jar existe - ESSENCIAL para iniciar
     const serverJarPath = path.join(serverDir, 'server.jar');
