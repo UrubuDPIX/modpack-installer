@@ -133,29 +133,35 @@ async function processInstallation(
                 if (cfKey) {
                   try {
                     // Busca dados do arquivo para obter nome correto e URL
+                    log.push(`[${new Date().toISOString()}] [CurseForge] Buscando mod ${modInfo.projectID}/${modInfo.fileID}...`);
                     const fileDataRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}`, {
                       headers: { 'x-api-key': cfKey }
                     });
+                    log.push(`[${new Date().toISOString()}] [CurseForge] API status: ${fileDataRes.status}`);
                     if (fileDataRes.ok) {
                       const fileData = await fileDataRes.json() as any;
                       const fileInfo = fileData.data;
                       modFileName = fileInfo.fileName || modFileName;
+                      log.push(`[${new Date().toISOString()}] [CurseForge] fileName: ${fileInfo.fileName || 'N/A'}, downloadUrl: ${fileInfo.downloadUrl ? 'SIM' : 'N/A'}`);
                       if (fileInfo.downloadUrl) {
                         modDownloadUrl = fileInfo.downloadUrl;
                       }
                     }
                     // Se não tem downloadUrl, tenta endpoint /download
                     if (!modDownloadUrl) {
+                      log.push(`[${new Date().toISOString()}] [CurseForge] Tentando endpoint /download...`);
                       const modDownloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}/download`, {
                         headers: { 'x-api-key': cfKey }
                       });
+                      log.push(`[${new Date().toISOString()}] [CurseForge] /download status: ${modDownloadRes.status}`);
                       if (modDownloadRes.ok) {
                         const modDownloadData = await modDownloadRes.json() as any;
                         modDownloadUrl = modDownloadData.data?.url || '';
+                        log.push(`[${new Date().toISOString()}] [CurseForge] /download url: ${modDownloadUrl ? 'SIM' : 'VAZIO'}`);
                       }
                     }
                   } catch (e) {
-                    // ignora erro individual
+                    log.push(`[${new Date().toISOString()}] [CurseForge] Erro na API: ${e}`);
                   }
                 }
                 // Fallback manual com nome correto do arquivo
