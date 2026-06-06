@@ -272,6 +272,18 @@ async function processInstallation(
       });
     }
     
+    // Instala NeoForge se houver startserver.sh (instala sem iniciar)
+    const startScriptPath = path.join(serverDir, 'startserver.sh');
+    if (await fileExists(startScriptPath)) {
+      log.push(`[${new Date().toISOString()}] Instalando NeoForge via startserver.sh...`);
+      try {
+        await execAsync(`cd ${serverDir} && chmod +x startserver.sh && ATM10_INSTALL_ONLY=true ./startserver.sh`);
+        log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
+      } catch (e: any) {
+        log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar NeoForge: ${e?.message || e}`);
+      }
+    }
+    
     // Atualiza startup command para NeoForge se necessário
     log.push(`[${new Date().toISOString()}] Verificando startup command...`);
     try {
