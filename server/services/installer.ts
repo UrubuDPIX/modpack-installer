@@ -234,15 +234,50 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
     await fs.writeFile(eulaPath, 'eula=true\n');
   }
   
-  // Baixa Fabric installer e cria server.jar
-  const mcVersion = version.minecraftVersion || '1.20.1';
-  const fabricInstallerUrl = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/0.15.7/0.11.2/server/jar`;
-  const serverJarPath = path.join(serverDir, 'server.jar');
+  // Detecta versão do Minecraft do modrinth.index.json
+  let mcVersion = version.minecraftVersion || '1.20.1';
+  let fabricLoaderVersion = '0.15.7';
   
   try {
-    await downloadFile(fabricInstallerUrl, serverJarPath);
+    const indexPath = path.join(serverDir, 'modrinth.index.json');
+    if (await directoryExists(indexPath)) {
+      const indexContent = await fs.readFile(indexPath, 'utf-8');
+      const index = JSON.parse(indexContent);
+      // Extrai versão do Minecraft das dependências
+      const gameVersion = index.dependencies?.minecraft;
+      if (gameVersion) {
+        mcVersion = gameVersion;
+        console.log(`[Fabric] Minecraft version detectada: ${mcVersion}`);
+      }
+      // Extrai versão do Fabric Loader
+      const loaderDep = index.dependencies?.['fabric-loader'];
+      if (loaderDep) {
+        fabricLoaderVersion = loaderDep;
+        console.log(`[Fabric] Fabric Loader version detectada: ${fabricLoaderVersion}`);
+      }
+    }
   } catch (e) {
-    console.error('[Fabric] Falha ao baixar server.jar:', e);
+    console.warn('[Fabric] Falha ao ler modrinth.index.json:', e);
+  }
+
+  // Baixa Fabric installer e cria server.jar
+  const fabricInstallerUrl = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/${fabricLoaderVersion}/0.11.2/server/jar`;
+  const serverJarPath = path.join(serverDir, 'server.jar');
+  
+  console.log(`[Fabric] Download server.jar: ${fabricInstallerUrl}`);
+  try {
+    await downloadFile(fabricInstallerUrl, serverJarPath);
+    console.log('[Fabric] server.jar baixado com sucesso');
+  } catch (e: any) {
+    console.error('[Fabric] Falha ao baixar server.jar:', e?.message || e);
+    // Fallback: tenta versão genérica
+    try {
+      const fallbackUrl = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/0.15.7/0.11.2/server/jar`;
+      console.log(`[Fabric] Tentando fallback: ${fallbackUrl}`);
+      await downloadFile(fallbackUrl, serverJarPath);
+    } catch (e2) {
+      console.error('[Fabric] Fallback também falhou');
+    }
   }
 }
 
