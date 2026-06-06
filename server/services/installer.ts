@@ -340,7 +340,8 @@ async function processInstallation(
     // Detecta e configura startup automaticamente
     log.push(`[${new Date().toISOString()}] Detectando tipo de modpack e configurando startup...`);
     try {
-      const startupCmd = await detectAndConfigureStartup(serverId, serverDir);
+      const mcVersion = await detectMinecraftVersion(serverDir, version);
+      const startupCmd = await detectAndConfigureStartup(serverId, serverDir, mcVersion);
       if (startupCmd) {
         log.push(`[${new Date().toISOString()}] Startup configurado: ${startupCmd}`);
       } else {
@@ -579,7 +580,7 @@ async function startServer(serverId: string): Promise<void> {
   }
 }
 
-async function detectAndConfigureStartup(serverId: string, serverDir: string): Promise<string | null> {
+async function detectAndConfigureStartup(serverId: string, serverDir: string, mcVersion: string): Promise<string | null> {
   const apiKey = await getPanelApiKey();
   if (!apiKey) {
     console.warn('[Startup] API Key do painel não configurada.');
@@ -707,7 +708,7 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string): P
         startup: startupCommand,
         environment: serverData.container?.environment || {},
         egg: serverData.egg || 1,
-        image: serverData.container?.image || 'ghcr.io/ptero-eggs/yolks:java_21',
+        image: getJavaImageForVersion(mcVersion),
         skip_scripts: false
       })
     });
@@ -755,6 +756,21 @@ async function detectMinecraftVersion(serverDir: string, version: any): Promise<
   
   // 4. Fallback padrao
   return '1.20.1';
+}
+
+function getJavaImageForVersion(mcVersion: string): string {
+  const versionMap: Record<string, string> = {
+    '1.7.10': 'ghcr.io/ptero-eggs/yolks:java_8',
+    '1.8.9': 'ghcr.io/ptero-eggs/yolks:java_8',
+    '1.12.2': 'ghcr.io/ptero-eggs/yolks:java_8',
+    '1.16.5': 'ghcr.io/ptero-eggs/yolks:java_11',
+    '1.18.2': 'ghcr.io/ptero-eggs/yolks:java_17',
+    '1.19.2': 'ghcr.io/ptero-eggs/yolks:java_17',
+    '1.20.1': 'ghcr.io/ptero-eggs/yolks:java_17',
+    '1.20.4': 'ghcr.io/ptero-eggs/yolks:java_17',
+    '1.21.1': 'ghcr.io/ptero-eggs/yolks:java_21',
+  };
+  return versionMap[mcVersion] || 'ghcr.io/ptero-eggs/yolks:java_17';
 }
 
 async function installForge(serverDir: string, mcVersion: string, log: string[]): Promise<void> {
