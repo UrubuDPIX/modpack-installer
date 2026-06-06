@@ -272,13 +272,13 @@ async function processInstallation(
       });
     }
     
-    // Atualiza startup command se necessário (NeoForge)
-    log.push(`[${new Date().toISOString()}] Verificando startup command...`);
+    // Cria startup.sh se o modpack vier com startserver.sh ou run.sh
+    log.push(`[${new Date().toISOString()}] Verificando startup script...`);
     try {
-      await updateServerStartup(serverId, serverDir);
-      log.push(`[${new Date().toISOString()}] Startup command atualizado`);
+      await configureStartupScript(serverDir);
+      log.push(`[${new Date().toISOString()}] Startup script configurado`);
     } catch (e: any) {
-      log.push(`[${new Date().toISOString()}] AVISO: Falha ao atualizar startup: ${e?.message || e}`);
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao configurar startup script: ${e?.message || e}`);
     }
     
     // Inicia servidor automaticamente
@@ -482,49 +482,36 @@ async function startServer(serverId: string): Promise<void> {
   }
 }
 
-async function updateServerStartup(serverId: string, serverDir: string): Promise<void> {
-  const apiKey = await getPanelApiKey();
-  if (!apiKey) {
-    console.warn('[Startup] API Key do painel não configurada.');
+async function configureStartupScript(serverDir: string): Promise<void> {
+  const files = await fs.readdir(serverDir);
+
+  // Detecta scripts de inicialização comuns em modpacks
+  const startupScripts = ['startserver.sh', 'run.sh', 'run-server.sh', 'launch.sh'];
+  const detectedScript = startupScripts.find(script => files.includes(script));
+
+  if (!detectedScript) {
+    console.log('[Startup] Nenhum script de startup detectado (startserver.sh/run.sh), pulando wrapper.');
     return;
   }
 
-  // Verifica se há instalador do NeoForge
-  const files = await fs.readdir(serverDir);
-  const neoForgeInstaller = files.find(f => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
-  if (!neoForgeInstaller) return;
+  console.log(`[Startup] Script detectado: ${detectedScript}`);
 
-  // Extrai versão do NeoForge do nome do arquivo
-  const match = neoForgeInstaller.match(/neoforge-(.+)-installer\.jar/);
-  if (!match) return;
-  const neoForgeVersion = match[1];
+  const startupContent = `#!/bin/sh
+# Wrapper gerado automaticamente pelo Modpack Installer
+cd /home/container
 
-  const startupCommand = `java @user_jvm_args.txt @libraries/net/neoforged/neoforge/${neoForgeVersion}/unix_args.txt nogui`;
+if [ -f "${detectedScript}" ]; then
+    chmod +x "${detectedScript}"
+    exec ./"${detectedScript}"
+fi
 
-  try {
-    console.log(`[Startup] Atualizando startup command para NeoForge ${neoForgeVersion}...`);
+# Fallback caso o script não exista
+exec java -jar server.jar nogui
+`;
 
-    const response = await fetch(`https://host.foxy-mc.com/api/application/servers/${serverId}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        startup: startupCommand
-      })
-    });
-
-    if (response.ok) {
-      console.log(`[Startup] Comando de startup atualizado: ${startupCommand}`);
-    } else {
-      const errorData = await response.text();
-      console.error(`[Startup] API retornou ${response.status}: ${errorData}`);
-    }
-  } catch (e: any) {
-    console.error('[Startup] Falha ao atualizar startup:', e?.message || String(e));
-  }
+  const startupPath = path.join(serverDir, 'startup.sh');
+  await fs.writeFile(startupPath, startupContent, { mode: 0o755 });
+  console.log(`[Startup] startup.sh criado apontando para ${detectedScript}`);
 }
 
 async function directoryExists(path: string): Promise<boolean> {
