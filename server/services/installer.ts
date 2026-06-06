@@ -113,6 +113,18 @@ async function processInstallation(
       await execAsync(`cp -r ${overridesDir}/* ${serverDir}/ && rm -rf ${overridesDir}`);
     }
     
+    // Instala NeoForge se houver instalador (CurseForge Server Pack)
+    const neoForgeInstaller = (await fs.readdir(serverDir)).find(f => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+    if (neoForgeInstaller) {
+      log.push(`[${new Date().toISOString()}] Instalando NeoForge (${neoForgeInstaller})...`);
+      try {
+        await execAsync(`cd ${serverDir} && java -jar ${neoForgeInstaller} -installServer`);
+        log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
+      } catch (e: any) {
+        log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar NeoForge: ${e?.message || e}`);
+      }
+    }
+    
     // Se tiver manifest.json (CurseForge), baixa mods individualmente
     const manifestPath = path.join(serverDir, 'manifest.json');
     const modsDir = path.join(serverDir, 'mods');
