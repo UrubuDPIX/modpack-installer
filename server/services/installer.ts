@@ -119,6 +119,15 @@ async function processInstallation(
       });
     }
     
+    // Inicia servidor automaticamente
+    log.push(`[${new Date().toISOString()}] Iniciando servidor...`);
+    try {
+      await startServer(serverId);
+      log.push(`[${new Date().toISOString()}] Servidor iniciado com sucesso!`);
+    } catch (e: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao iniciar servidor: ${e?.message || String(e)}`);
+    }
+    
   } catch (error) {
     log.push(`[${new Date().toISOString()}] ERRO: ${error}`);
     
@@ -235,6 +244,40 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
 
 async function configureNeoForge(serverDir: string, version: any): Promise<void> {
   // Configurações específicas do NeoForge
+}
+
+async function getPanelApiKey(): Promise<string | null> {
+  try {
+    const result: any = await prisma.$queryRaw`SELECT value FROM modpack_settings WHERE \`key\` = 'panel_api_key' LIMIT 1`;
+    return result?.[0]?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+async function startServer(serverId: string): Promise<void> {
+  const panelKey = await getPanelApiKey();
+  if (!panelKey) {
+    console.log('[AutoStart] API key do painel nao configurada');
+    return;
+  }
+
+  const panelUrl = process.env.PANEL_URL || 'https://host.foxy-mc.com';
+  
+  const response = await fetch(`${panelUrl}/api/client/servers/${serverId}/power`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${panelKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify({ signal: 'start' })
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`HTTP ${response.status}: ${text}`);
+  }
 }
 
 async function directoryExists(path: string): Promise<boolean> {
