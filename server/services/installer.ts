@@ -284,20 +284,17 @@ async function processInstallation(
       }
     }
     
-    // Atualiza startup command para NeoForge se necessário
-    log.push(`[${new Date().toISOString()}] Verificando startup command...`);
+    // Detecta e configura startup automaticamente
+    log.push(`[${new Date().toISOString()}] Detectando tipo de modpack e configurando startup...`);
     try {
-      await updateServerStartup(serverId, serverDir);
-      log.push(`[${new Date().toISOString()}] Startup command atualizado`);
+      const startupCmd = await detectAndConfigureStartup(serverId, serverDir);
+      if (startupCmd) {
+        log.push(`[${new Date().toISOString()}] Startup configurado: ${startupCmd}`);
+      } else {
+        log.push(`[${new Date().toISOString()}] AVISO: Não foi possível detectar startup automaticamente`);
+      }
     } catch (e: any) {
-      log.push(`[${new Date().toISOString()}] AVISO: Falha ao atualizar startup command: ${e?.message || e}`);
-    }
-    
-    // Cria startup.sh wrapper como fallback
-    try {
-      await configureStartupScript(serverDir);
-    } catch (e: any) {
-      log.push(`[${new Date().toISOString()}] AVISO: Falha ao criar startup.sh: ${e?.message || e}`);
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao configurar startup: ${e?.message || e}`);
     }
     
     // Inicia servidor automaticamente
@@ -529,34 +526,92 @@ async function startServer(serverId: string): Promise<void> {
   }
 }
 
-async function updateServerStartup(serverId: string, serverDir: string): Promise<void> {
+async function detectAndConfigureStartup(serverId: string, serverDir: string): Promise<string | null> {
   const apiKey = await getPanelApiKey();
   if (!apiKey) {
     console.warn('[Startup] API Key do painel não configurada.');
-    return;
+    return null;
   }
 
   const files = await fs.readdir(serverDir);
-  const neoForgeInstaller = files.find(f => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
-  if (!neoForgeInstaller) return;
+  let startupCommand: string | null = null;
+  let detectedType = 'unknown';
 
-  const match = neoForgeInstaller.match(/neoforge-(.+)-installer\.jar/);
-  if (!match) return;
-  const neoForgeVersion = match[1];
+  // Detector 1: startserver.sh (NeoForge/Forge Server Pack)
+  if (files.includes('startserver.sh')) {
+    console.log('[Detector] startserver.sh encontrado');
+    detectedType = 'startserver.sh';
+    startupCommand = 'bash startserver.sh';
+  }
+  // Detector 2: run.sh (Forge/Fabric genérico)
+  else if (files.includes('run.sh')) {
+    console.log('[Detector] run.sh encontrado');
+    detectedType = 'run.sh';
+    startupCommand = 'bash run.sh';
+  }
+  // Detector 3: NeoForge unix_args.txt
+  else {
+    const neoForgePattern = /libraries\/net\/neoforged\/neoforge\/([^/]+)\/unix_args\.txt/;
+    const neoForgeMatch = files.find(f => neoForgePattern.test(f));
+    if (neoForgeMatch) {
+      const nfMatch = neoForgeMatch.match(neoForgePattern);
+      if (nfMatch) {
+        console.log(`[Detector] NeoForge unix_args.txt encontrado (v${nfMatch[1]})`);
+        detectedType = 'neoforge-unix_args';
+        startupCommand = `java @user_jvm_args.txt @libraries/net/neoforged/neoforge/${nfMatch[1]}/unix_args.txt nogui`;
+      }
+    }
+  }
+  // Detector 4: Forge universal jar (Forge antigo)
+  if (!startupCommand) {
+    const forgeUniversal = files.find(f => /^forge-.+-universal\.jar$/.test(f));
+    if (forgeUniversal) {
+      console.log(`[Detector] Forge universal jar encontrado: ${forgeUniversal}`);
+      detectedType = 'forge-universal';
+      startupCommand = `java -jar ${forgeUniversal} nogui`;
+    }
+  }
+  // Detector 5: Fabric server launch
+  if (!startupCommand) {
+    if (files.includes('fabric-server-launch.jar')) {
+      console.log('[Detector] Fabric server launch encontrado');
+      detectedType = 'fabric';
+      startupCommand = 'java -jar fabric-server-launch.jar nogui';
+    }
+  }
+  // Detector 6: Quilt
+  if (!startupCommand) {
+    if (files.includes('quilt-server-launch.jar')) {
+      console.log('[Detector] Quilt server launch encontrado');
+      detectedType = 'quilt';
+      startupCommand = 'java -jar quilt-server-launch.jar nogui';
+    }
+  }
+  // Detector 7: Vanilla fallback
+  if (!startupCommand) {
+    if (files.includes('server.jar')) {
+      console.log('[Detector] Vanilla server.jar encontrado');
+      detectedType = 'vanilla';
+      startupCommand = 'java -jar server.jar nogui';
+    }
+  }
 
-  const startupCommand = `java @user_jvm_args.txt @libraries/net/neoforged/neoforge/${neoForgeVersion}/unix_args.txt nogui`;
+  if (!startupCommand) {
+    console.warn('[Detector] Nenhum startup detectado!');
+    return null;
+  }
 
+  console.log(`[Detector] Tipo detectado: ${detectedType}`);
+  console.log(`[Detector] Startup escolhido: ${startupCommand}`);
+
+  // Atualiza startup via API
   try {
-    // Busca ID interno numérico (Application API não aceita UUID)
     const internalId = await getServerInternalId(serverId);
     if (!internalId) {
       console.warn('[Startup] ID interno não encontrado, startup não atualizado.');
-      return;
+      return startupCommand;
     }
 
-    console.log(`[Startup] Atualizando startup command para NeoForge ${neoForgeVersion}...`);
-
-    // Busca dados atuais do servidor (precisa de environment, egg, image)
     const getRes = await fetch(`https://host.foxy-mc.com/api/application/servers/${internalId}`, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -595,38 +650,8 @@ async function updateServerStartup(serverId: string, serverDir: string): Promise
   } catch (e: any) {
     console.error('[Startup] Falha ao atualizar startup:', e?.message || String(e));
   }
-}
 
-async function configureStartupScript(serverDir: string): Promise<void> {
-  const files = await fs.readdir(serverDir);
-
-  // Detecta scripts de inicialização comuns em modpacks
-  const startupScripts = ['startserver.sh', 'run.sh', 'run-server.sh', 'launch.sh'];
-  const detectedScript = startupScripts.find(script => files.includes(script));
-
-  if (!detectedScript) {
-    console.log('[Startup] Nenhum script de startup detectado (startserver.sh/run.sh), pulando wrapper.');
-    return;
-  }
-
-  console.log(`[Startup] Script detectado: ${detectedScript}`);
-
-  const startupContent = `#!/bin/sh
-# Wrapper gerado automaticamente pelo Modpack Installer
-cd /home/container
-
-if [ -f "${detectedScript}" ]; then
-    chmod +x "${detectedScript}"
-    exec ./"${detectedScript}"
-fi
-
-# Fallback caso o script não exista
-exec java -jar server.jar nogui
-`;
-
-  const startupPath = path.join(serverDir, 'startup.sh');
-  await fs.writeFile(startupPath, startupContent, { mode: 0o755 });
-  console.log(`[Startup] startup.sh criado apontando para ${detectedScript}`);
+  return startupCommand;
 }
 
 async function directoryExists(path: string): Promise<boolean> {
