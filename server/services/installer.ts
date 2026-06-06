@@ -127,30 +127,46 @@ async function processInstallation(
           for (const modInfo of manifest.files) {
             try {
               if (modInfo.projectID && modInfo.fileID) {
-                // Busca URL de download do mod
+                // Busca URL de download do mod via API CurseForge
                 let modDownloadUrl = '';
+                let modFileName = `${modInfo.projectID}_${modInfo.fileID}.jar`;
                 if (cfKey) {
                   try {
-                    const modDownloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}/download`, {
+                    // Busca dados do arquivo para obter nome correto e URL
+                    const fileDataRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}`, {
                       headers: { 'x-api-key': cfKey }
                     });
-                    if (modDownloadRes.ok) {
-                      const modDownloadData = await modDownloadRes.json() as any;
-                      modDownloadUrl = modDownloadData.data?.url || '';
+                    if (fileDataRes.ok) {
+                      const fileData = await fileDataRes.json() as any;
+                      const fileInfo = fileData.data;
+                      modFileName = fileInfo.fileName || modFileName;
+                      if (fileInfo.downloadUrl) {
+                        modDownloadUrl = fileInfo.downloadUrl;
+                      }
+                    }
+                    // Se não tem downloadUrl, tenta endpoint /download
+                    if (!modDownloadUrl) {
+                      const modDownloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}/download`, {
+                        headers: { 'x-api-key': cfKey }
+                      });
+                      if (modDownloadRes.ok) {
+                        const modDownloadData = await modDownloadRes.json() as any;
+                        modDownloadUrl = modDownloadData.data?.url || '';
+                      }
                     }
                   } catch (e) {
                     // ignora erro individual
                   }
                 }
-                // Fallback manual
+                // Fallback manual com nome correto do arquivo
                 if (!modDownloadUrl) {
                   const idStr = String(modInfo.fileID);
                   const part1 = idStr.substring(0, idStr.length - 3) || '0';
                   const part2 = idStr.substring(idStr.length - 3).padStart(3, '0');
-                  modDownloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${modInfo.fileName || 'mod.jar'}`;
+                  modDownloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${modFileName}`;
                 }
                 if (modDownloadUrl) {
-                  const modDest = path.join(modsDir, `${modInfo.projectID}_${modInfo.fileID}.jar`);
+                  const modDest = path.join(modsDir, modFileName);
                   await downloadFile(modDownloadUrl, modDest);
                 }
               }
