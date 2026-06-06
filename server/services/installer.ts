@@ -260,18 +260,32 @@ async function getPanelApiKey(): Promise<string | null> {
 }
 
 async function startServer(serverId: string): Promise<void> {
-  // Tenta iniciar via Docker (Wings)
+  const apiKey = await getPanelApiKey();
+  if (!apiKey) {
+    console.warn('[AutoStart] API Key do painel não configurada. Configure em Admin > Modpack Settings.');
+    return;
+  }
+
   try {
-    await execAsync(`docker start ${serverId}`);
-    console.log(`[AutoStart] Servidor ${serverId} iniciado via Docker`);
-  } catch (e: any) {
-    // Se falhar, tenta via systemctl ( Wings service )
-    try {
-      await execAsync(`systemctl start wings`);
-      console.log('[AutoStart] Wings iniciado');
-    } catch {
-      console.error('[AutoStart] Falha ao iniciar servidor:', e?.message || String(e));
+    // Usa a API do Pterodactyl para iniciar o servidor
+    const response = await fetch(`https://host.foxy-mc.com/api/client/servers/${serverId}/power`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ signal: 'start' })
+    });
+
+    if (response.ok) {
+      console.log(`[AutoStart] Comando de start enviado para o servidor ${serverId}`);
+    } else {
+      const errorData = await response.text();
+      console.error(`[AutoStart] API retornou ${response.status}: ${errorData}`);
     }
+  } catch (e: any) {
+    console.error('[AutoStart] Falha ao iniciar servidor:', e?.message || String(e));
   }
 }
 
