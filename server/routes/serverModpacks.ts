@@ -126,13 +126,41 @@ router.post('/:id/modpack', async (req, res) => {
         return res.status(400).json({ message: `Erro ao buscar modpack na CurseForge: ${modRes.status}` });
       }
       // Buscar arquivo (version_id é o fileId)
-      const fileRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${version_id}`, {
+      // Primeiro tenta buscar arquivo de servidor (Server Pack)
+      let serverFileId = version_id;
+      try {
+        const allFilesRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files?pageSize=50`, {
+          headers: { 'x-api-key': cfKey }
+        });
+        if (allFilesRes.ok) {
+          const allFilesData = await allFilesRes.json() as any;
+          const files = allFilesData.data || [];
+          // Busca arquivo de servidor relacionado ao fileId selecionado
+          const selectedFile = files.find((f: any) => String(f.id) === String(version_id));
+          if (selectedFile) {
+            // Tenta encontrar server pack na mesma versão do jogo
+            const gameVersion = selectedFile.gameVersions?.[0];
+            const serverFile = files.find((f: any) => 
+              f.fileName?.toLowerCase().includes('server') &&
+              f.gameVersions?.[0] === gameVersion
+            );
+            if (serverFile) {
+              console.log(`[CurseForge] Server pack encontrado: ${serverFile.fileName} (ID: ${serverFile.id})`);
+              serverFileId = serverFile.id;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[CurseForge] Falha ao buscar server pack, usando arquivo padrão');
+      }
+
+      const fileRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${serverFileId}`, {
         headers: { 'x-api-key': cfKey }
       });
       if (fileRes.ok) {
         const fileData = await fileRes.json() as any;
         const file = fileData.data;
-        versionName = file.displayName || version_id;
+        versionName = file.displayName || serverFileId;
         minecraftVersion = file.gameVersions?.[0] || 'unknown';
         const rawLoader = file.sortableGameVersions?.find((v: any) => ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(v.gameVersionName))?.gameVersionName || 'Forge';
         loader = ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(rawLoader) ? rawLoader : 'Forge';
@@ -143,7 +171,7 @@ router.post('/:id/modpack', async (req, res) => {
         } else {
           // Busca URL de download via endpoint específico
           try {
-            const downloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${version_id}/download`, {
+            const downloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modpack_slug}/files/${serverFileId}/download`, {
               headers: { 'x-api-key': cfKey }
             });
             if (downloadRes.ok) {
@@ -166,7 +194,7 @@ router.post('/:id/modpack', async (req, res) => {
         console.log(`[CurseForge] Download URL: ${downloadUrl || 'VAZIO'}`);
       } else {
         const errorText = await fileRes.text();
-        console.error(`[CurseForge] Erro ao buscar arquivo ${version_id}: ${fileRes.status} - ${errorText}`);
+        console.error(`[CurseForge] Erro ao buscar arquivo ${serverFileId}: ${fileRes.status} - ${errorText}`);
         return res.status(400).json({ message: `Erro ao buscar arquivo do modpack: ${fileRes.status}` });
       }
     }
