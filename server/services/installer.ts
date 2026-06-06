@@ -544,6 +544,20 @@ async function updateServerStartup(serverId: string, serverDir: string): Promise
 
     console.log(`[Startup] Atualizando startup command para NeoForge ${neoForgeVersion}...`);
 
+    // Busca dados atuais do servidor (precisa de environment, egg, image)
+    const getRes = await fetch(`https://host.foxy-mc.com/api/application/servers/${internalId}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json'
+      }
+    });
+
+    let serverData: any = {};
+    if (getRes.ok) {
+      const fullData = await getRes.json() as any;
+      serverData = fullData.attributes || {};
+    }
+
     const response = await fetch(`https://host.foxy-mc.com/api/application/servers/${internalId}/startup`, {
       method: 'PATCH',
       headers: {
@@ -552,7 +566,11 @@ async function updateServerStartup(serverId: string, serverDir: string): Promise
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        startup: startupCommand
+        startup: startupCommand,
+        environment: serverData.container?.environment || {},
+        egg: serverData.egg || 1,
+        image: serverData.container?.image || 'ghcr.io/ptero-eggs/yolks:java_21',
+        skip_scripts: false
       })
     });
 
