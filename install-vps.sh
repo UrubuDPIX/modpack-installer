@@ -771,6 +771,9 @@ build_frontend() {
         print_info "Instalando dependências..."
         yarn install --frozen-lockfile 2>/dev/null || yarn install
         
+        print_info "Formatando arquivos modificados com Prettier para evitar falhas de build..."
+        yarn run prettier --write "resources/scripts/components/server/modpacks/*" "resources/scripts/routers/ServerRouter.tsx" "resources/scripts/routers/routes.ts" &>/dev/null || ./node_modules/.bin/prettier --write "resources/scripts/components/server/modpacks/*" "resources/scripts/routers/ServerRouter.tsx" "resources/scripts/routers/routes.ts" &>/dev/null || true
+        
         print_info "Compilando assets..."
         
         # Detecta Node.js v22+ e usa legacy OpenSSL provider
