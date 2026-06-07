@@ -1200,9 +1200,12 @@ async function removeClientSideMods(modsDir: string, log: string[]): Promise<voi
       if (!file.endsWith('.jar')) continue;
       
       const lowerFile = file.toLowerCase();
-      const isClientSide = clientSidePatterns.some(pattern => 
-        lowerFile.includes(pattern.toLowerCase())
-      );
+      const isClientSide = clientSidePatterns.some(pattern => {
+        // Escapa caracteres especiais do pattern e cria uma regex com limites de palavra/hífen/underline
+        const escapedPattern = pattern.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp(`(^|[-_])${escapedPattern}([-_\\d.]|$)`, 'i');
+        return regex.test(lowerFile);
+      });
       
       if (isClientSide) {
         const filePath = path.join(modsDir, file);
