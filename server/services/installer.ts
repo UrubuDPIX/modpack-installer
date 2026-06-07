@@ -1114,16 +1114,13 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
     // Se nao detectou do manifest, usa mapeamento
     if (!forgeVersion) {
       const forgeVersions: Record<string, string> = {
-        '1.7.10': '1.7.10-10.13.4.1614-1.7.10',
-        '1.8.9': '1.8.9-11.15.1.2318-1.8.9',
-        '1.12.2': '1.12.2-14.23.5.2860',
+        '1.12.2': '1.12.2-14.23.5.2859',
         '1.16.5': '1.16.5-36.2.39',
         '1.18.2': '1.18.2-40.2.0',
         '1.19.2': '1.19.2-43.2.0',
         '1.19.4': '1.19.4-45.1.0',
         '1.20.1': '1.20.1-47.2.0',
         '1.20.4': '1.20.4-49.0.3',
-        '1.20.6': '1.20.6-50.1.0',
       };
       
       if (forgeVersions[mcVersion]) {
@@ -1171,6 +1168,18 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
           break;
         } catch (e: any) {
           log.push(`[${new Date().toISOString()}] Alternativa ${altVer} também falhou: ${e.message}`);
+        }
+      }
+      if (!downloaded) {
+        // Último fallback: tenta no servidor antigo do Forge
+        const fallbackUrl = `https://files.minecraftforge.net/maven/net/minecraftforge/forge/${forgeVersion}/${forgeInstaller}`;
+        log.push(`[${new Date().toISOString()}] Tentando fallback no files.minecraftforge.net: ${fallbackUrl}`);
+        try {
+          await downloadFile(fallbackUrl, installerPath);
+          log.push(`[${new Date().toISOString()}] Forge baixado via fallback com sucesso`);
+          downloaded = true;
+        } catch (fallbackErr: any) {
+          log.push(`[${new Date().toISOString()}] Fallback também falhou: ${fallbackErr.message}`);
         }
       }
       if (!downloaded) {
