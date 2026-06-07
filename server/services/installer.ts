@@ -1178,7 +1178,6 @@ async function removeClientSideMods(modsDir: string, log: string[]): Promise<voi
     'clear-skies',
     'custom-splash-screen',
     'fancymenu',
-    'konkrete',
     'melody',
     'loadmyresources',
     'respackopts',
@@ -1187,10 +1186,6 @@ async function removeClientSideMods(modsDir: string, log: string[]): Promise<voi
     'smoke-suppression',
     'smooth-boot',
     'sparkweave',
-    'starlight',
-    'lazydfu',
-    'ferrite-core',
-    'c2me' // C2ME é server-side, mas pode causar problemas em alguns casos
   ];
   
   try {
