@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useEffect, useState } from "react";
-import InstallProgressModal from "../components/InstallProgressModal";
+import InstallProgressModal from "./InstallProgressModal";
 import { useParams, useHistory, useLocation } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
