@@ -119,7 +119,12 @@ async function processInstallation(
       throw new Error('URL de download não disponível');
     }
     
-    await downloadFile(version.download_url, downloadPath);
+    try {
+      await downloadFile(version.download_url, downloadPath);
+    } catch (downloadErr: any) {
+      log.push(`[${new Date().toISOString()}] ERRO: Falha no download do modpack: ${downloadErr.message}`);
+      throw new Error(`Falha ao baixar modpack: ${downloadErr.message}`);
+    }
     
     // Verifica se o arquivo foi baixado
     const stats = await fs.stat(downloadPath).catch(() => null);
@@ -483,7 +488,7 @@ async function downloadFile(url: string, dest: string): Promise<void> {
   console.log(`[Download] URL: ${url}`);
   const response = await fetch(url);
   console.log(`[Download] Status: ${response.status}`);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status} para ${url}`);
   
   const buffer = await response.arrayBuffer();
   console.log(`[Download] Tamanho: ${buffer.byteLength} bytes`);
@@ -694,7 +699,12 @@ async function configureNeoForge(serverDir: string, version: any, log: string[])
   
   log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
   const installerPath = path.join(serverDir, neoForgeInstaller);
-  await downloadFile(neoForgeUrl, installerPath);
+  try {
+    await downloadFile(neoForgeUrl, installerPath);
+  } catch (neoDownloadErr: any) {
+    log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+    throw new Error(`Não foi possível baixar o instalador do NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+  }
   
   log.push(`[${new Date().toISOString()}] Instalando NeoForge...`);
   const javaImage = getJavaImageForVersion(mcVersion);
@@ -1133,7 +1143,43 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
   
   log.push(`[${new Date().toISOString()}] Baixando Forge ${forgeVersion}...`);
   const installerPath = path.join(serverDir, forgeInstaller);
-  await downloadFile(forgeUrl, installerPath);
+  try {
+    await downloadFile(forgeUrl, installerPath);
+  } catch (forgeDownloadErr: any) {
+    log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar Forge ${forgeVersion}: ${forgeDownloadErr.message}`);
+    // Se der 404, tenta versão recomendada mais genérica (última parte do version string)
+    if (forgeDownloadErr.message.includes('404')) {
+      const parts = forgeVersion.split('-');
+      const mcPart = parts[0];
+      const forgePart = parts[1] || '';
+      // Tenta sem a parte extra (ex: 1.12.2-14.23.5.2860 → 1.12.2-14.23.5.2860 é a única)
+      // Ou tenta com o formato mais comum
+      const altVersions = [
+        `${mcPart}-${forgePart}`,
+        `${mcPart}-${forgePart}-${mcPart}`,
+      ];
+      let downloaded = false;
+      for (const altVer of altVersions) {
+        if (altVer === forgeVersion) continue;
+        const altInstaller = `forge-${altVer}-installer.jar`;
+        const altUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${altVer}/${altInstaller}`;
+        log.push(`[${new Date().toISOString()}] Tentando versão alternativa: ${altUrl}`);
+        try {
+          await downloadFile(altUrl, installerPath);
+          log.push(`[${new Date().toISOString()}] Forge alternativo baixado com sucesso: ${altVer}`);
+          downloaded = true;
+          break;
+        } catch (e: any) {
+          log.push(`[${new Date().toISOString()}] Alternativa ${altVer} também falhou: ${e.message}`);
+        }
+      }
+      if (!downloaded) {
+        throw new Error(`Não foi possível baixar o instalador do Forge para ${mcVersion}. Verifique se a versão existe.`);
+      }
+    } else {
+      throw forgeDownloadErr;
+    }
+  }
   
   log.push(`[${new Date().toISOString()}] Instalando Forge...`);
   const javaImage = getJavaImageForVersion(mcVersion);
@@ -1188,7 +1234,12 @@ async function installNeoForge(serverDir: string, mcVersion: string, log: string
   
   log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
   const installerPath = path.join(serverDir, neoForgeInstaller);
-  await downloadFile(neoForgeUrl, installerPath);
+  try {
+    await downloadFile(neoForgeUrl, installerPath);
+  } catch (neoDownloadErr: any) {
+    log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+    throw new Error(`Não foi possível baixar o instalador do NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+  }
   
   log.push(`[${new Date().toISOString()}] Instalando NeoForge...`);
   const javaImage = getJavaImageForVersion(mcVersion);
