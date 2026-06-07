@@ -144,9 +144,20 @@ async function processInstallation(
       await execAsync(`cp -r ${overridesDir}/* ${serverDir}/ && rm -rf ${overridesDir}`);
     }
     
-    // Baixa mods do modrinth.index.json (funciona para QUALQUER modloader)
-    log.push(`[${new Date().toISOString()}] Verificando modrinth.index.json...`);
-    await downloadModrinthMods(serverDir);
+    // Detecta se é um Server Pack (já vem com mods, configs e instalador)
+    const hasModsDir = await directoryExists(path.join(serverDir, 'mods'));
+    const hasConfigDir = await directoryExists(path.join(serverDir, 'config'));
+    const hasForgeInstaller = (await fs.readdir(serverDir).catch(() => [])).some((f: string) => f.startsWith('forge-') && f.endsWith('-installer.jar'));
+    const hasNeoForgeInstaller = (await fs.readdir(serverDir).catch(() => [])).some((f: string) => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+    const isServerPack = hasModsDir && (hasForgeInstaller || hasNeoForgeInstaller);
+    
+    if (isServerPack) {
+      log.push(`[${new Date().toISOString()}] Server Pack detectado! Pulando download de mods individuais.`);
+    } else {
+      // Baixa mods do modrinth.index.json (funciona para QUALQUER modloader)
+      log.push(`[${new Date().toISOString()}] Verificando modrinth.index.json...`);
+      await downloadModrinthMods(serverDir);
+    }
     
     // Auto-detecta o modloader (Forge, NeoForge, Fabric) do modpack
     const detected = await autoDetectModloader(serverDir, version, log);
@@ -325,27 +336,22 @@ async function processInstallation(
     }
     
     // Verifica se o modpack já tem conteúdo de servidor (Server Pack)
-    const hasModsDir = await directoryExists(path.join(serverDir, 'mods'));
-    const hasConfigDir = await directoryExists(path.join(serverDir, 'config'));
     const hasStartupScript = (await fs.readdir(serverDir)).some((f: string) => 
       f === 'startserver.sh' || f === 'run.sh' || f === 'run.bat'
     );
     const hasForgeUniversal = (await fs.readdir(serverDir)).some((f: string) => 
       /^forge-.+-universal\.jar$/.test(f)
     );
-    const hasNeoForgeInstaller = (await fs.readdir(serverDir)).some((f: string) => 
-      f.startsWith('neoforge-') && f.endsWith('-installer.jar')
-    );
-    const isServerPack = hasModsDir || hasConfigDir || hasStartupScript || hasForgeUniversal || hasNeoForgeInstaller;
+    const isServerPackComplete = isServerPack || hasStartupScript || hasForgeUniversal;
     
-    if (isServerPack) {
+    if (isServerPackComplete) {
       log.push(`[${new Date().toISOString()}] Server Pack detectado (mods=${hasModsDir}, config=${hasConfigDir}, script=${hasStartupScript}, forge=${hasForgeUniversal}, neoforge=${hasNeoForgeInstaller})`);
       log.push(`[${new Date().toISOString()}] Pulando download de server.jar vanilla`);
     }
     
     // Verifica se server.jar existe - ESSENCIAL para iniciar
     const serverJarPath = path.join(serverDir, 'server.jar');
-    if (!isServerPack && !await fileExists(serverJarPath)) {
+    if (!isServerPackComplete && !await fileExists(serverJarPath)) {
       log.push(`[${new Date().toISOString()}] AVISO: server.jar não encontrado após configuração!`);
       // Tenta baixar server.jar vanilla como último recurso
       try {
@@ -486,17 +492,46 @@ async function runCommandWithLog(command: string, log: string[]): Promise<void> 
 
 async function downloadFile(url: string, dest: string): Promise<void> {
   console.log(`[Download] URL: ${url}`);
-  const response = await fetch(url);
-  console.log(`[Download] Status: ${response.status}`);
-  if (!response.ok) throw new Error(`HTTP ${response.status} para ${url}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180_000); // 3 min timeout
   
-  const buffer = await response.arrayBuffer();
-  console.log(`[Download] Tamanho: ${buffer.byteLength} bytes`);
-  await fs.writeFile(dest, Buffer.from(buffer));
-  
-  // Verifica se arquivo foi salvo
-  const stats = await fs.stat(dest);
-  console.log(`[Download] Arquivo salvo: ${dest} (${stats.size} bytes)`);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    console.log(`[Download] Status: ${response.status}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status} para ${url}`);
+    if (!response.body) throw new Error(`Response body vazio para ${url}`);
+    
+    // Stream em vez de carregar tudo em memória
+    const writer = await fs.open(dest, 'w');
+    const reader = response.body.getReader();
+    let downloaded = 0;
+    let lastLog = 0;
+    const startTime = Date.now();
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writer.write(Buffer.from(value));
+      downloaded += value.length;
+      
+      // Log progresso a cada 10MB
+      if (downloaded - lastLog >= 10 * 1024 * 1024) {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`[Download] ${(downloaded / 1024 / 1024).toFixed(1)} MB em ${elapsed}s`);
+        lastLog = downloaded;
+      }
+    }
+    
+    await writer.close();
+    clearTimeout(timeout);
+    console.log(`[Download] Concluído: ${dest} (${downloaded} bytes)`);
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      throw new Error(`Timeout (3min) ao baixar ${url}`);
+    }
+    throw err;
+  }
 }
 
 async function cleanServerDirectory(serverDir: string): Promise<void> {
