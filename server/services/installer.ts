@@ -139,6 +139,10 @@ async function processInstallation(
       await execAsync(`cp -r ${overridesDir}/* ${serverDir}/ && rm -rf ${overridesDir}`);
     }
     
+    // Baixa mods do modrinth.index.json (funciona para QUALQUER modloader)
+    log.push(`[${new Date().toISOString()}] Verificando modrinth.index.json...`);
+    await downloadModrinthMods(serverDir);
+    
     // Auto-detecta o modloader (Forge, NeoForge, Fabric) do modpack
     const detected = await autoDetectModloader(serverDir, version, log);
     
@@ -193,9 +197,11 @@ async function processInstallation(
       } else if (detected.loader === 'Fabric') {
         const hasFabricJar = await fileExists(path.join(serverDir, 'server.jar'));
         if (!hasFabricJar) {
-          log.push(`[${new Date().toISOString()}] Fabric detectado mas server.jar não encontrado, iniciando configuração...`);
-          await configureFabric(serverDir, { ...version, minecraftVersion: detected.minecraftVersion, loaderVersion: detected.loaderVersion });
+          log.push(`[${new Date().toISOString()}] Fabric detectado mas server.jar não encontrado, baixando Fabric server jar...`);
+        } else {
+          log.push(`[${new Date().toISOString()}] Fabric detectado, verificando mods e configurações...`);
         }
+        await configureFabric(serverDir, { ...version, minecraftVersion: detected.minecraftVersion, loaderVersion: detected.loaderVersion });
       }
     }
     
@@ -298,10 +304,8 @@ async function processInstallation(
     log.push(`[${new Date().toISOString()}] Removendo mods client-side...`);
     await removeClientSideMods(modsDir, log);
     
-    // Configurações específicas do loader (usa modloader do modpack)
-    const loaderType = version.modpack?.modloader || version.loader || 'Forge';
-    log.push(`[${new Date().toISOString()}] Configurando loader: ${loaderType}...`);
-    await configureLoader(serverDir, { ...version, loader: loaderType });
+    // Loader já configurado anteriormente no fluxo (installForge/installNeoForge/configureFabric)
+    // Não chama configureLoader aqui para evitar duplicação de instalação
     
     // Corrige permissões para o usuário pterodactyl (UID 999 no container Docker)
     log.push(`[${new Date().toISOString()}] Corrigindo permissoes...`);
@@ -512,7 +516,7 @@ async function configureLoader(serverDir: string, version: any): Promise<void> {
       await configureFabric(serverDir, version);
       break;
     case 'NeoForge':
-      await configureNeoForge(serverDir, version);
+      await configureNeoForge(serverDir, version, []);
       break;
   }
 }
@@ -523,19 +527,18 @@ async function configureForge(serverDir: string, version: any): Promise<void> {
   // Executa instalador do Forge se necessário
 }
 
-async function configureFabric(serverDir: string, version: any): Promise<void> {
+async function downloadModrinthMods(serverDir: string): Promise<void> {
   // Lê modrinth.index.json e baixa os mods
   const indexPath = path.join(serverDir, 'modrinth.index.json');
   if (await directoryExists(indexPath)) {
     const indexContent = await fs.readFile(indexPath, 'utf-8');
     const index = JSON.parse(indexContent);
     
-    // Baixa cada arquivo listado no index (ignora mods client-side)
     for (const file of index.files || []) {
-      // Verifica se é mod client-side (env.server === 'unsupported')
+      // Ignora mods client-side (env.server === 'unsupported')
       if (file.env?.server === 'unsupported') {
         console.log(`[Modrinth] IGNORADO (Client-Side): ${file.path}`);
-        continue; // Pula o download deste mod
+        continue;
       }
       
       if (file.downloads && file.downloads.length > 0) {
@@ -546,11 +549,16 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
         try {
           await downloadFile(file.downloads[0], filePath);
         } catch (e) {
-          console.error(`[Fabric] Falha ao baixar ${file.path}:`, e);
+          console.error(`[Modrinth] Falha ao baixar ${file.path}:`, e);
         }
       }
     }
   }
+}
+
+async function configureFabric(serverDir: string, version: any): Promise<void> {
+  // Baixa mods do modrinth.index.json se existir (chamado também no fluxo principal)
+  await downloadModrinthMods(serverDir);
   
   // Cria eula.txt
   const eulaPath = path.join(serverDir, 'eula.txt');
@@ -630,8 +638,69 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
   }
 }
 
-async function configureNeoForge(serverDir: string, version: any): Promise<void> {
-  // Configurações específicas do NeoForge
+async function configureNeoForge(serverDir: string, version: any, log: string[]): Promise<void> {
+  // Detecta versão do Minecraft e do NeoForge
+  let mcVersion = version.minecraftVersion || '1.21.1';
+  let neoForgeVersion = version.loaderVersion || '';
+  
+  try {
+    const manifestPath = path.join(serverDir, 'manifest.json');
+    if (await fileExists(manifestPath)) {
+      const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+      const manifest = JSON.parse(manifestContent);
+      if (manifest.minecraft?.version) {
+        mcVersion = manifest.minecraft.version;
+      }
+      const loaders = manifest.minecraft?.modLoaders || [];
+      const neoForgeLoader = loaders.find((l: any) => l.id && l.id.startsWith('neoforge-'));
+      if (neoForgeLoader) {
+        neoForgeVersion = neoForgeLoader.id.replace('neoforge-', '');
+      }
+    }
+    
+    const indexPath = path.join(serverDir, 'modrinth.index.json');
+    if (await directoryExists(indexPath)) {
+      const indexContent = await fs.readFile(indexPath, 'utf-8');
+      const index = JSON.parse(indexContent);
+      if (index.dependencies?.minecraft) {
+        mcVersion = index.dependencies.minecraft;
+      }
+      if (index.dependencies?.['neoforge']) {
+        neoForgeVersion = index.dependencies['neoforge'];
+      }
+    }
+  } catch (e) {
+    // Ignora erros de leitura
+  }
+  
+  if (!neoForgeVersion) {
+    const neoForgeVersions: Record<string, string> = {
+      '1.20.1': '20.2.59',
+      '1.20.4': '20.4.237',
+      '1.20.6': '20.6.119',
+      '1.21.1': '21.1.143',
+      '1.21.4': '21.4.47',
+    };
+    neoForgeVersion = neoForgeVersions[mcVersion] || '';
+  }
+  
+  if (!neoForgeVersion) {
+    log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada para NeoForge. Abortando.`);
+    throw new Error(`Versão do NeoForge não mapeada para Minecraft ${mcVersion}`);
+  }
+  
+  const neoForgeInstaller = `neoforge-${neoForgeVersion}-installer.jar`;
+  const neoForgeUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoForgeVersion}/${neoForgeInstaller}`;
+  
+  log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
+  const installerPath = path.join(serverDir, neoForgeInstaller);
+  await downloadFile(neoForgeUrl, installerPath);
+  
+  log.push(`[${new Date().toISOString()}] Instalando NeoForge...`);
+  const javaImage = getJavaImageForVersion(mcVersion);
+  await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${neoForgeInstaller} -installServer`, log);
+  
+  log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
 }
 
 async function getPanelApiKey(): Promise<string | null> {
@@ -975,21 +1044,36 @@ async function detectMinecraftVersion(serverDir: string, version: any): Promise<
   return '1.20.1';
 }
 
+function parseMcVersion(mcVersion: string): number[] {
+  const parts = mcVersion.split('.').map(Number);
+  return parts.length >= 2 ? parts : [1, 0, 0];
+}
+
+function compareMcVersion(a: string, b: string): number {
+  const av = parseMcVersion(a);
+  const bv = parseMcVersion(b);
+  for (let i = 0; i < Math.max(av.length, bv.length); i++) {
+    const avp = av[i] || 0;
+    const bvp = bv[i] || 0;
+    if (avp !== bvp) return avp - bvp;
+  }
+  return 0;
+}
+
 function getJavaImageForVersion(mcVersion: string): string {
-  const versionMap: Record<string, string> = {
-    '1.7.10': 'ghcr.io/ptero-eggs/yolks:java_8',
-    '1.8.9': 'ghcr.io/ptero-eggs/yolks:java_8',
-    '1.12.2': 'ghcr.io/ptero-eggs/yolks:java_8',
-    '1.16.5': 'ghcr.io/ptero-eggs/yolks:java_11',
-    '1.18.2': 'ghcr.io/ptero-eggs/yolks:java_17',
-    '1.19.2': 'ghcr.io/ptero-eggs/yolks:java_17',
-    '1.20.1': 'ghcr.io/ptero-eggs/yolks:java_17',
-    '1.20.4': 'ghcr.io/ptero-eggs/yolks:java_17',
-    '1.20.6': 'ghcr.io/ptero-eggs/yolks:java_21',
-    '1.21.1': 'ghcr.io/ptero-eggs/yolks:java_21',
-    '1.21.4': 'ghcr.io/ptero-eggs/yolks:java_21',
-  };
-  return versionMap[mcVersion] || 'ghcr.io/ptero-eggs/yolks:java_17';
+  // Range-based mapping: version >= threshold gets the specified image
+  const ranges: { min: string; image: string }[] = [
+    { min: '1.20.5', image: 'ghcr.io/ptero-eggs/yolks:java_21' },
+    { min: '1.17',   image: 'ghcr.io/ptero-eggs/yolks:java_17' },
+    { min: '1.16',   image: 'ghcr.io/ptero-eggs/yolks:java_11' },
+    { min: '1.0',    image: 'ghcr.io/ptero-eggs/yolks:java_8' },
+  ];
+  for (const range of ranges) {
+    if (compareMcVersion(mcVersion, range.min) >= 0) {
+      return range.image;
+    }
+  }
+  return 'ghcr.io/ptero-eggs/yolks:java_17';
 }
 
 async function installForge(serverDir: string, mcVersion: string, log: string[], specificForgeVersion?: string): Promise<void> {
@@ -1020,18 +1104,23 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
     // Se nao detectou do manifest, usa mapeamento
     if (!forgeVersion) {
       const forgeVersions: Record<string, string> = {
+        '1.7.10': '1.7.10-10.13.4.1614-1.7.10',
+        '1.8.9': '1.8.9-11.15.1.2318-1.8.9',
         '1.12.2': '1.12.2-14.23.5.2860',
         '1.16.5': '1.16.5-36.2.39',
         '1.18.2': '1.18.2-40.2.0',
         '1.19.2': '1.19.2-43.2.0',
-        '1.20.1': '1.20.1-47.2.0'
+        '1.19.4': '1.19.4-45.1.0',
+        '1.20.1': '1.20.1-47.2.0',
+        '1.20.4': '1.20.4-49.0.3',
+        '1.20.6': '1.20.6-50.1.0',
       };
       
       if (forgeVersions[mcVersion]) {
         forgeVersion = forgeVersions[mcVersion];
       } else {
-        log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada, usando Forge 1.12.2 como fallback`);
-        return await installForge(serverDir, '1.12.2', log);
+        log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada para Forge. Abortando.`);
+        throw new Error(`Versão do Forge não mapeada para Minecraft ${mcVersion}`);
       }
     }
   }
