@@ -20,6 +20,7 @@ export default function InstallProgressModal({
   const [currentMod, setCurrentMod] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [errorMessage, setIsErrorMessage] = useState('');
+  const [totalModsInstalled, setTotalModsInstalled] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -29,6 +30,7 @@ export default function InstallProgressModal({
       setIsComplete(false);
       setCurrentMod(null);
       setIsError(false);
+      setTotalModsInstalled(null);
       return;
     }
 
@@ -44,6 +46,11 @@ export default function InstallProgressModal({
         const installStatus = data.status;
         const logText = data.install_log || '';
         const logLines = logText.split('\n').filter(Boolean);
+
+        const downloadedCount = logLines.filter((l: string) => l.includes('Arquivo salvo:')).length;
+        if (downloadedCount > 0) {
+          setTotalModsInstalled(downloadedCount);
+        }
 
         // 1. Trata status de erro
         if (installStatus === 'error') {
@@ -253,6 +260,22 @@ export default function InstallProgressModal({
               <span className="text-red-500 mr-2">⚠️</span> Falha na instalação:
             </p>
             <p className="text-xs font-mono bg-red-950/30 p-2 rounded border border-red-500/10 whitespace-pre-wrap">{errorMessage}</p>
+          </div>
+        )}
+
+        {isComplete && (
+          <div className="mb-6 p-4 bg-green-900/10 border border-green-500/50 rounded-lg text-sm text-green-300 flex flex-col gap-1 shadow-sm">
+            <p className="font-bold flex items-center text-md text-white mb-1">
+              <span className="text-green-500 mr-2">✓</span> Instalação Concluída!
+            </p>
+            <p className="text-xs text-gray-300">
+              O modpack foi totalmente instalado e configurado no seu servidor Jexactyl.
+            </p>
+            {totalModsInstalled !== null && (
+              <p className="text-xs font-semibold text-green-400 mt-2 bg-green-950/30 p-2 rounded border border-green-500/10 inline-block w-fit">
+                📦 Total de {totalModsInstalled} mods instalados com sucesso.
+              </p>
+            )}
           </div>
         )}
 
