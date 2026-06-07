@@ -70,7 +70,7 @@ export default function InstallProgressModal({
           clearInterval(interval);
           
           // Se o progresso já estiver completo ou quase completo, finaliza direto
-          if (progress >= 95) {
+          if (progress >= 95 || data.install_log?.includes('Server Pack detectado')) {
             setProgress(100);
             setIsComplete(true);
             setStepTitle('Instalação concluída');
@@ -202,7 +202,7 @@ export default function InstallProgressModal({
       } catch (err) {
         console.error('Erro ao monitorar instalação:', err);
       }
-    }, 500);
+    }, 3000);
 
     return () => {
       isMounted = false;

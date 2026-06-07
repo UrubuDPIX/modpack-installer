@@ -493,7 +493,7 @@ async function runCommandWithLog(command: string, log: string[]): Promise<void> 
 async function downloadFile(url: string, dest: string): Promise<void> {
   console.log(`[Download] URL: ${url}`);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 180_000); // 3 min timeout
+  const timeout = setTimeout(() => controller.abort(), 600_000); // 10 min timeout
   
   try {
     const response = await fetch(url, { signal: controller.signal });
@@ -528,7 +528,7 @@ async function downloadFile(url: string, dest: string): Promise<void> {
   } catch (err: any) {
     clearTimeout(timeout);
     if (err.name === 'AbortError') {
-      throw new Error(`Timeout (3min) ao baixar ${url}`);
+      throw new Error(`Timeout (10min) ao baixar ${url}`);
     }
     throw err;
   }
