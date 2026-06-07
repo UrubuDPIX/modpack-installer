@@ -14,8 +14,6 @@ const CF_CLIENT_SIDE_CATEGORIES = [
   4642, // Otimizações Gráficas (Sodium, Iris)
   4555, // Shaders
   4455, // Resource Packs
-  4460, // Utility & QoL (alguns são client-only)
-  4475, // Performance
 ];
 
 interface InstallResult {
@@ -1088,10 +1086,12 @@ async function fileExists(path: string): Promise<boolean> {
 async function getCurseForgeKey(): Promise<string | null> {
   try {
     const result: any = await prisma.$queryRaw`SELECT value FROM modpack_settings WHERE \`key\` = 'curseforge_api_key' LIMIT 1`;
-    return result?.[0]?.value || null;
-  } catch {
-    return null;
-  }
+    const dbKey = result?.[0]?.value;
+    if (dbKey && dbKey.trim() !== '') {
+      return dbKey;
+    }
+  } catch {}
+  return process.env.CURSEFORGE_API_KEY || null;
 }
 
 function getTruncatedLog(logArray: string[]): string {
