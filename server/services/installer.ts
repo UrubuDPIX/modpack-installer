@@ -854,6 +854,13 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
     return null;
   }
 
+  // Se for Forge ou NeoForge, e houver um installer correspondente, prependa o comando de instalação automática na inicialização
+  const installerJar = files.find((f: string) => (f.startsWith('forge-') || f.startsWith('neoforge-')) && f.endsWith('-installer.jar'));
+  if (installerJar && (detectedType.startsWith('forge') || detectedType.startsWith('neoforge') || startupCommand.startsWith('java'))) {
+    console.log(`[Detector] Prepended auto-installer command using ${installerJar}`);
+    startupCommand = `if [ ! -d libraries ] || [ ! "$(ls -A libraries 2>/dev/null)" ]; then java -jar ${installerJar} -installServer; fi && ${startupCommand}`;
+  }
+
   console.log(`[Detector] Tipo detectado: ${detectedType}`);
   console.log(`[Detector] Startup escolhido: ${startupCommand}`);
 
@@ -1355,6 +1362,15 @@ async function autoDetectModloader(serverDir: string, version: any, log: string[
       loader = 'Forge';
       loaderVersion = forgeInstaller.replace(/^forge-/i, '').replace(/-installer\.jar$/i, '');
       log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado instalador Forge: ${forgeInstaller}`);
+      return { loader, loaderVersion, minecraftVersion };
+    }
+    
+    // Forge execution jar (ex: forge-1.16.5-36.2.34.jar)
+    const forgeJar = files.find((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+    if (forgeJar) {
+      loader = 'Forge';
+      loaderVersion = forgeJar.replace(/^forge-/i, '').replace(/\.jar$/i, '');
+      log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado jar executável do Forge: ${forgeJar}`);
       return { loader, loaderVersion, minecraftVersion };
     }
     
