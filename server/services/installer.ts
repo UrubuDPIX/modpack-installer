@@ -159,7 +159,7 @@ async function processInstallation(
       log.push(`[${new Date().toISOString()}] Executando instalador local do NeoForge (${localNeoForgeInstaller}) via Docker...`);
       try {
         const javaImage = getJavaImageForVersion(detected.minecraftVersion);
-        await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${localNeoForgeInstaller} -installServer`);
+        await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${localNeoForgeInstaller} -installServer`, log);
         log.push(`[${new Date().toISOString()}] NeoForge local instalado com sucesso`);
       } catch (e: any) {
         log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar NeoForge local: ${e?.message || e}`);
@@ -168,7 +168,7 @@ async function processInstallation(
       log.push(`[${new Date().toISOString()}] Executando instalador local do Forge (${localForgeInstaller}) via Docker...`);
       try {
         const javaImage = getJavaImageForVersion(detected.minecraftVersion);
-        await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${localForgeInstaller} -installServer`);
+        await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${localForgeInstaller} -installServer`, log);
         log.push(`[${new Date().toISOString()}] Forge local instalado com sucesso`);
       } catch (e: any) {
         log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar Forge local: ${e?.message || e}`);
@@ -182,31 +182,19 @@ async function processInstallation(
         const hasNeoForgeJar = (await fs.readdir(serverDir)).some((f: string) => f.startsWith('neoforge-') && !f.includes('-installer'));
         if (!hasNeoForgeJar || !hasLibraries) {
           log.push(`[${new Date().toISOString()}] NeoForge detectado mas incompleto (jar ou libraries faltando), iniciando instalação...`);
-          try {
-            await installNeoForge(serverDir, detected.minecraftVersion, log, detected.loaderVersion);
-          } catch (e: any) {
-            log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar NeoForge: ${e?.message || e}`);
-          }
+          await installNeoForge(serverDir, detected.minecraftVersion, log, detected.loaderVersion);
         }
       } else if (detected.loader === 'Forge') {
         const hasForgeJar = (await fs.readdir(serverDir)).some((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
         if (!hasForgeJar || !hasLibraries) {
           log.push(`[${new Date().toISOString()}] Forge detectado mas incompleto (jar ou libraries faltando), iniciando instalação...`);
-          try {
-            await installForge(serverDir, detected.minecraftVersion, log, detected.loaderVersion);
-          } catch (e: any) {
-            log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar Forge: ${e?.message || e}`);
-          }
+          await installForge(serverDir, detected.minecraftVersion, log, detected.loaderVersion);
         }
       } else if (detected.loader === 'Fabric') {
         const hasFabricJar = await fileExists(path.join(serverDir, 'server.jar'));
         if (!hasFabricJar) {
           log.push(`[${new Date().toISOString()}] Fabric detectado mas server.jar não encontrado, iniciando configuração...`);
-          try {
-            await configureFabric(serverDir, { ...version, minecraftVersion: detected.minecraftVersion, loaderVersion: detected.loaderVersion });
-          } catch (e: any) {
-            log.push(`[${new Date().toISOString()}] AVISO: Falha ao configurar Fabric: ${e?.message || e}`);
-          }
+          await configureFabric(serverDir, { ...version, minecraftVersion: detected.minecraftVersion, loaderVersion: detected.loaderVersion });
         }
       }
     }
@@ -469,6 +457,22 @@ export async function uninstallModpack(serverId: string): Promise<void> {
   await prisma.serverModpack.deleteMany({
     where: { server_id: serverId }
   });
+}
+
+async function runCommandWithLog(command: string, log: string[]): Promise<void> {
+  try {
+    const { stdout, stderr } = await execAsync(command);
+    if (stdout) {
+      log.push(stdout.toString());
+    }
+    if (stderr) {
+      log.push(`[STDERR] ${stderr.toString()}`);
+    }
+  } catch (error: any) {
+    if (error.stdout) log.push(error.stdout.toString());
+    if (error.stderr) log.push(`[STDERR] ${error.stderr.toString()}`);
+    throw error;
+  }
 }
 
 async function downloadFile(url: string, dest: string): Promise<void> {
@@ -1017,7 +1021,7 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
   
   log.push(`[${new Date().toISOString()}] Instalando Forge...`);
   const javaImage = getJavaImageForVersion(mcVersion);
-  await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${forgeInstaller} -installServer`);
+  await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${forgeInstaller} -installServer`, log);
   
   log.push(`[${new Date().toISOString()}] Forge instalado com sucesso`);
 }
@@ -1072,7 +1076,7 @@ async function installNeoForge(serverDir: string, mcVersion: string, log: string
   
   log.push(`[${new Date().toISOString()}] Instalando NeoForge...`);
   const javaImage = getJavaImageForVersion(mcVersion);
-  await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${neoForgeInstaller} -installServer`);
+  await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${neoForgeInstaller} -installServer`, log);
   
   log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
 }
