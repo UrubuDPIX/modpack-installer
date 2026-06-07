@@ -722,34 +722,90 @@ EOF
     # Configura Nginx proxy pass
     print_info "Configurando proxy no Nginx..."
 
-    # Cria arquivo de proxy separado em conf.d (mais robusto que editar config existente)
-    cat > /etc/nginx/conf.d/modpack-installer-proxy.conf << 'NGINX_EOF'
-# BEGIN MODPACK INSTALLER PROXY
-location ~ ^/api/client/servers/[^/]+/modpack {
-    proxy_pass http://127.0.0.1:3001;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
+    # Remove o arquivo avulso conf.d antigo que quebrava o Nginx (location fora do server block)
+    rm -f /etc/nginx/conf.d/modpack-installer-proxy.conf
 
-location /api/admin/modpack-settings {
-    proxy_pass http://127.0.0.1:3001;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-# END MODPACK INSTALLER PROXY
-NGINX_EOF
+    # Localiza o arquivo de configuração do Jexactyl
+    local nginx_file=""
+    for f in "/etc/nginx/sites-available/pterodactyl.conf" "/etc/nginx/sites-enabled/pterodactyl.conf" "/etc/nginx/conf.d/pterodactyl.conf" "/var/nginx/pterodactyl.conf"; do
+        if [ -f "$f" ]; then
+            nginx_file="$f"
+            break
+        fi
+    done
 
-    nginx -t 2>/dev/null && systemctl restart nginx || {
-        print_warning "Falha ao reiniciar Nginx. Verifique a configuração manualmente."
+    if [ -n "$nginx_file" ]; then
+        print_info "Configuração Nginx encontrada em: $nginx_file. Injetando proxy..."
+        
+        local NJ=/tmp/inject_nginx.js
+        {
+        cat << 'NJEOF'
+const fs = require('fs');
+const path = require('path');
+const nginxFile = process.argv[2];
+
+if (fs.existsSync(nginxFile)) {
+    let c = fs.readFileSync(nginxFile, 'utf8');
+    
+    // Remove injeções anteriores
+    c = c.replace(/# BEGIN MODPACK INSTALLER PROXY[\s\S]*?# END MODPACK INSTALLER PROXY/g, '');
+    c = c.trim();
+    
+    const proxyBlock = `
+    # BEGIN MODPACK INSTALLER PROXY
+    location ~ ^/api/client/servers/[^/]+/modpack {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    location /api/admin/modpack-settings {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    # END MODPACK INSTALLER PROXY
+`;
+    
+    // Injeta antes da última chave de fechar }
+    const lastBrace = c.lastIndexOf('}');
+    if (lastBrace !== -1) {
+        c = c.slice(0, lastBrace) + proxyBlock + c.slice(lastBrace);
+        fs.writeFileSync(nginxFile, c);
+        console.log('✓ Nginx config patched!');
+    } else {
+        console.log('⚠ Não foi possível encontrar a chave de fechamento no Nginx');
+    }
+}
+NJEOF
+        } > "$NJ"
+
+        node "$NJ" "$nginx_file"
+        rm -f "$NJ"
+    else
+        print_warning "Arquivo de configuração do Nginx do Jexactyl não foi encontrado automaticamente!"
+        print_info "Adicione as regras de proxy_pass para a porta 3001 manualmente no seu bloco server do Nginx."
+    fi
+
+    # Testa e reinicia o Nginx
+    if nginx -t &>/dev/null; then
+        systemctl restart nginx || service nginx restart || true
+        print_success "Nginx reiniciado com sucesso"
+    else
+        print_warning "Nginx reportou erro de sintaxe. Tentando remover proxy e restaurar..."
+        if [ -n "$nginx_file" ]; then
+            sed -i '/# BEGIN MODPACK INSTALLER PROXY/,/# END MODPACK INSTALLER PROXY/d' "$nginx_file"
+        fi
+        systemctl restart nginx || service nginx restart || true
+    fi
     print_success "Proxy Nginx configurado"
 }
 
