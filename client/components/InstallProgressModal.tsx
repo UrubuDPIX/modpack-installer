@@ -60,12 +60,51 @@ export default function InstallProgressModal({
 
         // 2. Trata concluído
         if (installStatus === 'installed') {
-          setIsComplete(true);
-          setProgress(100);
-          setStepTitle('Instalação concluída');
-          setStepDescription('O modpack foi instalado com sucesso no seu servidor!');
-          setCurrentMod(null);
           clearInterval(interval);
+          
+          // Se o progresso já estiver completo ou quase completo, finaliza direto
+          if (progress >= 95) {
+            setProgress(100);
+            setIsComplete(true);
+            setStepTitle('Instalação concluída');
+            setStepDescription('O modpack foi instalado com sucesso no seu servidor!');
+            setCurrentMod(null);
+            return;
+          }
+
+          // Caso contrário, faz uma varredura acelerada (fast-forward) super satisfatória de etapas
+          let tempProgress = progress > 5 ? progress : 15;
+          const ffInterval = setInterval(() => {
+            tempProgress += Math.floor(Math.random() * 4) + 6; // incrementa entre 6% e 9% por tick
+            if (tempProgress >= 100) {
+              tempProgress = 100;
+              clearInterval(ffInterval);
+              setIsComplete(true);
+              setStepTitle('Instalação concluída');
+              setStepDescription('O modpack foi instalado com sucesso no seu servidor!');
+              setCurrentMod(null);
+            } else {
+              // Atualiza o título e descrição das etapas dinamicamente durante a varredura rápida
+              if (tempProgress < 25) {
+                setStepTitle('Preparando instalação');
+                setStepDescription('Limpando diretório do servidor e preparando arquivos...');
+              } else if (tempProgress < 40) {
+                setStepTitle('Verificando modloader');
+                setStepDescription('Instalando e configurando o loader (Forge/Fabric/NeoForge)...');
+              } else if (tempProgress < 60) {
+                setStepTitle('Baixando arquivos');
+                setStepDescription('Baixando arquivo zip principal do modpack e manifest.json...');
+              } else if (tempProgress < 85) {
+                setStepTitle('Baixando mods');
+                setStepDescription('Baixando mods individuais de forma paralela...');
+              } else {
+                setStepTitle('Configurando');
+                setStepDescription('Ajustando configurações do servidor e limpando arquivos desnecessários...');
+              }
+            }
+            setProgress(tempProgress);
+          }, 80); // Roda a cada 80ms para um efeito super fluido e satisfatório!
+          
           return;
         }
 
@@ -156,7 +195,7 @@ export default function InstallProgressModal({
       } catch (err) {
         console.error('Erro ao monitorar instalação:', err);
       }
-    }, 1500);
+    }, 500);
 
     return () => {
       isMounted = false;
