@@ -173,10 +173,13 @@ async function processInstallation(
       }
     } else {
       // Se não há instaladores locais, usa nossa auto-detecção para baixar e instalar remotamente!
+      const librariesPath = path.join(serverDir, 'libraries');
+      const hasLibraries = await directoryExists(librariesPath) && (await fs.readdir(librariesPath).catch(() => [])).length > 0;
+
       if (detected.loader === 'NeoForge') {
         const hasNeoForgeJar = (await fs.readdir(serverDir)).some((f: string) => f.startsWith('neoforge-') && !f.includes('-installer'));
-        if (!hasNeoForgeJar) {
-          log.push(`[${new Date().toISOString()}] NeoForge detectado mas jar de execução não encontrado, iniciando instalação...`);
+        if (!hasNeoForgeJar || !hasLibraries) {
+          log.push(`[${new Date().toISOString()}] NeoForge detectado mas incompleto (jar ou libraries faltando), iniciando instalação...`);
           try {
             await installNeoForge(serverDir, detected.minecraftVersion, log, detected.loaderVersion);
           } catch (e: any) {
@@ -185,8 +188,8 @@ async function processInstallation(
         }
       } else if (detected.loader === 'Forge') {
         const hasForgeJar = (await fs.readdir(serverDir)).some((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
-        if (!hasForgeJar) {
-          log.push(`[${new Date().toISOString()}] Forge detectado mas jar de execução não encontrado, iniciando instalação...`);
+        if (!hasForgeJar || !hasLibraries) {
+          log.push(`[${new Date().toISOString()}] Forge detectado mas incompleto (jar ou libraries faltando), iniciando instalação...`);
           try {
             await installForge(serverDir, detected.minecraftVersion, log, detected.loaderVersion);
           } catch (e: any) {
