@@ -887,7 +887,16 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
 }
 
 async function detectMinecraftVersion(serverDir: string, version: any): Promise<string> {
-  // 1. Tenta usar versao do banco de dados
+  // 1. Tenta usar versao do banco de dados (relação modpack ou propriedades diretas)
+  if (version.modpack?.minecraft_version) {
+    return version.modpack.minecraft_version;
+  }
+  if (version.modpack?.minecraftVersion) {
+    return version.modpack.minecraftVersion;
+  }
+  if (version.minecraft_version) {
+    return version.minecraft_version;
+  }
   if (version.minecraftVersion) {
     return version.minecraftVersion;
   }
@@ -928,7 +937,9 @@ function getJavaImageForVersion(mcVersion: string): string {
     '1.19.2': 'ghcr.io/ptero-eggs/yolks:java_17',
     '1.20.1': 'ghcr.io/ptero-eggs/yolks:java_17',
     '1.20.4': 'ghcr.io/ptero-eggs/yolks:java_17',
+    '1.20.6': 'ghcr.io/ptero-eggs/yolks:java_21',
     '1.21.1': 'ghcr.io/ptero-eggs/yolks:java_21',
+    '1.21.4': 'ghcr.io/ptero-eggs/yolks:java_21',
   };
   return versionMap[mcVersion] || 'ghcr.io/ptero-eggs/yolks:java_17';
 }
