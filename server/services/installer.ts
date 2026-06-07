@@ -1264,7 +1264,7 @@ async function autoDetectModloader(serverDir: string, version: any, log: string[
   
   let loader: 'Forge' | 'Fabric' | 'NeoForge' | 'Vanilla' = 'Vanilla';
   let loaderVersion = '';
-  let minecraftVersion = version?.minecraftVersion || '';
+  let minecraftVersion = version?.modpack?.minecraft_version || version?.minecraft_version || version?.minecraftVersion || version?.modpack?.minecraftVersion || '';
 
   // 1. Verifica manifest.json (CurseForge Pack)
   try {
