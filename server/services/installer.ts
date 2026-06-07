@@ -3,6 +3,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
+import https from 'https';
+import http from 'http';
+import { createWriteStream } from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -492,46 +495,56 @@ async function runCommandWithLog(command: string, log: string[]): Promise<void> 
 
 async function downloadFile(url: string, dest: string): Promise<void> {
   console.log(`[Download] URL: ${url}`);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 600_000); // 10 min timeout
-  
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    console.log(`[Download] Status: ${response.status}`);
-    if (!response.ok) throw new Error(`HTTP ${response.status} para ${url}`);
-    if (!response.body) throw new Error(`Response body vazio para ${url}`);
-    
-    // Stream em vez de carregar tudo em memória
-    const writer = await fs.open(dest, 'w');
-    const reader = response.body.getReader();
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https:') ? https : http;
+    const file = createWriteStream(dest);
     let downloaded = 0;
     let lastLog = 0;
     const startTime = Date.now();
-    
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      await writer.write(Buffer.from(value));
-      downloaded += value.length;
-      
-      // Log progresso a cada 10MB
-      if (downloaded - lastLog >= 10 * 1024 * 1024) {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`[Download] ${(downloaded / 1024 / 1024).toFixed(1)} MB em ${elapsed}s`);
-        lastLog = downloaded;
+
+    const request = client.get(url, { timeout: 600_000 }, (response: http.IncomingMessage) => {
+      if (response.statusCode !== 200) {
+        file.close();
+        reject(new Error(`HTTP ${response.statusCode} para ${url}`));
+        return;
       }
-    }
-    
-    await writer.close();
-    clearTimeout(timeout);
-    console.log(`[Download] Concluído: ${dest} (${downloaded} bytes)`);
-  } catch (err: any) {
-    clearTimeout(timeout);
-    if (err.name === 'AbortError') {
-      throw new Error(`Timeout (10min) ao baixar ${url}`);
-    }
-    throw err;
-  }
+
+      response.on('data', (chunk: Buffer) => {
+        downloaded += chunk.length;
+        if (downloaded - lastLog >= 10 * 1024 * 1024) {
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log(`[Download] ${(downloaded / 1024 / 1024).toFixed(1)} MB em ${elapsed}s`);
+          lastLog = downloaded;
+        }
+      });
+
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        console.log(`[Download] Concluído: ${dest} (${downloaded} bytes)`);
+        resolve();
+      });
+    });
+
+    request.on('error', (err: Error) => {
+      file.close();
+      fs.unlink(dest).catch(() => {});
+      reject(err);
+    });
+
+    request.on('timeout', () => {
+      request.destroy();
+      file.close();
+      fs.unlink(dest).catch(() => {});
+      reject(new Error(`Timeout (10min) ao baixar ${url}`));
+    });
+
+    file.on('error', (err: Error) => {
+      request.destroy();
+      fs.unlink(dest).catch(() => {});
+      reject(err);
+    });
+  });
 }
 
 async function cleanServerDirectory(serverDir: string): Promise<void> {
