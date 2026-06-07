@@ -778,7 +778,12 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
   }
   // Detector 4: Forge universal jar (Forge antigo)
   if (!startupCommand) {
-    const forgeUniversal = files.find((f: string) => /^forge-.+-universal\.jar$/.test(f));
+    const mcVerSafe = mcVersion.replace(/\./g, '\\.');
+    const universalPattern = new RegExp(`^forge-${mcVerSafe}-.+-universal\\.jar$`, 'i');
+    let forgeUniversal = files.find((f: string) => universalPattern.test(f));
+    if (!forgeUniversal) {
+      forgeUniversal = files.find((f: string) => /^forge-.+-universal\.jar$/.test(f));
+    }
     if (forgeUniversal) {
       console.log(`[Detector] Forge universal jar encontrado: ${forgeUniversal}`);
       detectedType = 'forge-universal';
@@ -787,7 +792,12 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
   }
   // Detector 4b: Forge jar genérico (instalador criou forge-*.jar)
   if (!startupCommand) {
-    const forgeJar = files.find((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+    const mcVerSafe = mcVersion.replace(/\./g, '\\.');
+    const forgeJarPattern = new RegExp(`^forge-${mcVerSafe}-.+\\.jar$`, 'i');
+    let forgeJar = files.find((f: string) => forgeJarPattern.test(f) && !f.includes('-installer'));
+    if (!forgeJar) {
+      forgeJar = files.find((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+    }
     if (forgeJar) {
       console.log(`[Detector] Forge jar encontrado: ${forgeJar}`);
       detectedType = 'forge-jar';
@@ -796,7 +806,12 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
   }
   // Detector 4c: Minecraft server jar (Forge 1.12.2 cria minecraft_server.x.x.jar)
   if (!startupCommand) {
-    const mcServerJar = files.find((f: string) => /^minecraft_server\..+\.jar$/.test(f));
+    const mcVerSafe = mcVersion.replace(/\./g, '\\.');
+    const mcServerPattern = new RegExp(`^minecraft_server\\.${mcVerSafe}\\.jar$`, 'i');
+    let mcServerJar = files.find((f: string) => mcServerPattern.test(f));
+    if (!mcServerJar) {
+      mcServerJar = files.find((f: string) => /^minecraft_server\..+\.jar$/.test(f));
+    }
     if (mcServerJar) {
       console.log(`[Detector] Minecraft server jar encontrado: ${mcServerJar}`);
       detectedType = 'minecraft-server';
