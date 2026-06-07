@@ -1201,7 +1201,8 @@ async function removeClientSideMods(modsDir: string, log: string[]): Promise<voi
     'okzoomer',
     'roughlyenoughitems',
     'emi',
-    'jei', // JEI pode ser usado em servidor, mas geralmente é opcional
+    // NOTA: JEI é removido daqui! Ele tem funcionalidades server-side e é dependência obrigatória
+    // de mods como JustEnoughResources, JustEnoughProfessions, etc.
     'controlling',
     'modmenu',
     'shulkerboxtooltip',
