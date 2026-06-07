@@ -695,15 +695,20 @@ async function configureNeoForge(serverDir: string, version: any, log: string[])
   }
   
   const neoForgeInstaller = `neoforge-${neoForgeVersion}-installer.jar`;
-  const neoForgeUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoForgeVersion}/${neoForgeInstaller}`;
-  
-  log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
   const installerPath = path.join(serverDir, neoForgeInstaller);
-  try {
-    await downloadFile(neoForgeUrl, installerPath);
-  } catch (neoDownloadErr: any) {
-    log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
-    throw new Error(`Não foi possível baixar o instalador do NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+  
+  const neoForgeInstallerExists = await fileExists(installerPath);
+  if (neoForgeInstallerExists) {
+    log.push(`[${new Date().toISOString()}] Instalador NeoForge já existe em ${installerPath}, pulando download`);
+  } else {
+    const neoForgeUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoForgeVersion}/${neoForgeInstaller}`;
+    log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
+    try {
+      await downloadFile(neoForgeUrl, installerPath);
+    } catch (neoDownloadErr: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+      throw new Error(`Não foi possível baixar o instalador do NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+    }
   }
   
   log.push(`[${new Date().toISOString()}] Instalando NeoForge...`);
@@ -1138,13 +1143,18 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
   }
   
   const forgeInstaller = `forge-${forgeVersion}-installer.jar`;
-  const forgeUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/${forgeInstaller}`;
-  
-  log.push(`[${new Date().toISOString()}] Baixando Forge ${forgeVersion}...`);
   const installerPath = path.join(serverDir, forgeInstaller);
-  try {
-    await downloadFile(forgeUrl, installerPath);
-  } catch (forgeDownloadErr: any) {
+  
+  // Se o instalador já existe (ex: server pack já incluiu), pula o download
+  const installerExists = await fileExists(installerPath);
+  if (installerExists) {
+    log.push(`[${new Date().toISOString()}] Instalador Forge já existe em ${installerPath}, pulando download`);
+  } else {
+    const forgeUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/${forgeInstaller}`;
+    log.push(`[${new Date().toISOString()}] Baixando Forge ${forgeVersion}...`);
+    try {
+      await downloadFile(forgeUrl, installerPath);
+    } catch (forgeDownloadErr: any) {
     log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar Forge ${forgeVersion}: ${forgeDownloadErr.message}`);
     // Se der 404, tenta versão recomendada mais genérica (última parte do version string)
     if (forgeDownloadErr.message.includes('404')) {
@@ -1241,15 +1251,20 @@ async function installNeoForge(serverDir: string, mcVersion: string, log: string
   }
   
   const neoForgeInstaller = `neoforge-${neoForgeVersion}-installer.jar`;
-  const neoForgeUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoForgeVersion}/${neoForgeInstaller}`;
-  
-  log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
   const installerPath = path.join(serverDir, neoForgeInstaller);
-  try {
-    await downloadFile(neoForgeUrl, installerPath);
-  } catch (neoDownloadErr: any) {
-    log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
-    throw new Error(`Não foi possível baixar o instalador do NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+  
+  const neoForgeInstallerExists = await fileExists(installerPath);
+  if (neoForgeInstallerExists) {
+    log.push(`[${new Date().toISOString()}] Instalador NeoForge já existe em ${installerPath}, pulando download`);
+  } else {
+    const neoForgeUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoForgeVersion}/${neoForgeInstaller}`;
+    log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
+    try {
+      await downloadFile(neoForgeUrl, installerPath);
+    } catch (neoDownloadErr: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+      throw new Error(`Não foi possível baixar o instalador do NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+    }
   }
   
   log.push(`[${new Date().toISOString()}] Instalando NeoForge...`);
