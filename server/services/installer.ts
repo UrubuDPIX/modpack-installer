@@ -1115,7 +1115,9 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
     if (!forgeVersion) {
       const forgeVersions: Record<string, string> = {
         '1.12.2': '1.12.2-14.23.5.2859',
+        '1.16.4': '1.16.4-35.1.37',
         '1.16.5': '1.16.5-36.2.39',
+        '1.18.1': '1.18.1-39.1.2',
         '1.18.2': '1.18.2-40.2.0',
         '1.19.2': '1.19.2-43.2.0',
         '1.19.4': '1.19.4-45.1.0',
