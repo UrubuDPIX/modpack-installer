@@ -79,6 +79,28 @@ async function processInstallation(
     }
     return originalPush.apply(log, args);
   };
+
+  // Encontra o registro no banco para atualizar log periodicamente
+  const serverModpack = await prisma.serverModpack.findFirst({
+    where: { server_id: serverId }
+  });
+
+  // Flush periódico do log a cada 5 segundos
+  const flushInterval = setInterval(async () => {
+    if (serverModpack && log.length > 0) {
+      try {
+        await prisma.serverModpack.update({
+          where: { id: serverModpack.id },
+          data: {
+            install_log: getTruncatedLog(log),
+            updated_at: new Date()
+          }
+        });
+      } catch (e) {
+        // Silencia erros de flush periódico
+      }
+    }
+  }, 5000);
   
   try {
     log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.version}`);
@@ -468,6 +490,8 @@ async function processInstallation(
         }
       });
     }
+  } finally {
+    clearInterval(flushInterval);
   }
 }
 
