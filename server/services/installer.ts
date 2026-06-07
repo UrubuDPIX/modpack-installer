@@ -513,9 +513,10 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
     await fs.writeFile(eulaPath, 'eula=true\n');
   }
   
-  // Detecta versão do Minecraft e do Fabric Loader
+  // Detecta versão do Minecraft e dos modloaders
   let mcVersion = version.minecraftVersion || '1.20.1';
   let fabricLoaderVersion = '0.15.11'; // Fallback mais moderno
+  let detectedForgeVersion = ''; // Versão do Forge detectada do manifest
   
   try {
     // 1. Tenta ler do manifest.json (CurseForge)
@@ -532,6 +533,12 @@ async function configureFabric(serverDir: string, version: any): Promise<void> {
       if (fabricLoader) {
         fabricLoaderVersion = fabricLoader.id.replace('fabric-', '');
         console.log(`[Fabric] Fabric Loader version detectada no manifest.json: ${fabricLoaderVersion}`);
+      }
+      // Detecta versão do Forge do manifest
+      const forgeLoader = loaders.find((l: any) => l.id && l.id.startsWith('forge-'));
+      if (forgeLoader) {
+        detectedForgeVersion = forgeLoader.id.replace('forge-', '');
+        console.log(`[Forge] Forge version detectada no manifest.json: ${detectedForgeVersion}`);
       }
     }
     
@@ -887,23 +894,49 @@ function getJavaImageForVersion(mcVersion: string): string {
   return versionMap[mcVersion] || 'ghcr.io/ptero-eggs/yolks:java_17';
 }
 
-async function installForge(serverDir: string, mcVersion: string, log: string[]): Promise<void> {
-  // Mapeamento de versões conhecidas do Forge
-  const forgeVersions: Record<string, string> = {
-    '1.12.2': '1.12.2-14.23.5.2860',
-    '1.16.5': '1.16.5-36.2.39',
-    '1.18.2': '1.18.2-40.2.0',
-    '1.19.2': '1.19.2-43.2.0',
-    '1.20.1': '1.20.1-47.2.0'
-  };
+async function installForge(serverDir: string, mcVersion: string, log: string[], specificForgeVersion?: string): Promise<void> {
+  let forgeVersion: string | undefined = undefined;
   
-  // Se nao encontrou versao, usa 1.12.2 como fallback (RLCraft)
-  if (!forgeVersions[mcVersion]) {
-    log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada, usando Forge 1.12.2 como fallback`);
-    return await installForge(serverDir, '1.12.2', log);
+  if (specificForgeVersion) {
+    // Usa versão específica detectada do manifest
+    forgeVersion = specificForgeVersion;
+    log.push(`[${new Date().toISOString()}] Usando Forge ${forgeVersion} (passado como parametro)`);
+  } else {
+    // Tenta detectar do manifest.json primeiro
+    try {
+      const manifestPath = path.join(serverDir, 'manifest.json');
+      if (await fileExists(manifestPath)) {
+        const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+        const manifest = JSON.parse(manifestContent);
+        const loaders = manifest.minecraft?.modLoaders || [];
+        const forgeLoader = loaders.find((l: any) => l.id && l.id.startsWith('forge-'));
+        if (forgeLoader) {
+          forgeVersion = forgeLoader.id.replace('forge-', '');
+          log.push(`[${new Date().toISOString()}] Forge version detectada do manifest.json: ${forgeVersion}`);
+        }
+      }
+    } catch (e) {
+      // Ignora erro, usa fallback
+    }
+    
+    // Se nao detectou do manifest, usa mapeamento
+    if (!forgeVersion) {
+      const forgeVersions: Record<string, string> = {
+        '1.12.2': '1.12.2-14.23.5.2860',
+        '1.16.5': '1.16.5-36.2.39',
+        '1.18.2': '1.18.2-40.2.0',
+        '1.19.2': '1.19.2-43.2.0',
+        '1.20.1': '1.20.1-47.2.0'
+      };
+      
+      if (forgeVersions[mcVersion]) {
+        forgeVersion = forgeVersions[mcVersion];
+      } else {
+        log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada, usando Forge 1.12.2 como fallback`);
+        return await installForge(serverDir, '1.12.2', log);
+      }
+    }
   }
-  
-  const forgeVersion = forgeVersions[mcVersion];
   if (!forgeVersion) {
     throw new Error(`Versão do Forge não conhecida para Minecraft ${mcVersion}`);
   }
