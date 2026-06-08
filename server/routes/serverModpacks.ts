@@ -380,10 +380,32 @@ router.get('/:id/modpack/versions', async (req, res) => {
     } else {
       const cfKey = await getCurseForgeKey();
       if (!cfKey) return res.status(400).json({ message: 'Chave CurseForge não configurada no painel' });
-      const resp = await fetch(`https://api.curseforge.com/v1/mods/${sourceId}/files?pageSize=50`, {
+      
+      let finalModId = sourceId;
+      // Se o source_id não for número (ex: "stoneblock"), buscamos o ID real na API do CurseForge
+      if (!/^\d+$/.test(finalModId)) {
+        const searchRes = await fetch(`https://api.curseforge.com/v1/mods/search?gameId=432&slug=${finalModId}`, {
+          headers: { 'x-api-key': cfKey, 'Accept': 'application/json' }
+        });
+        if (searchRes.ok) {
+          const searchData = await searchRes.json() as any;
+          if (searchData.data && searchData.data.length > 0) {
+            finalModId = String(searchData.data[0].id);
+          } else {
+            return res.status(404).json({ message: `Modpack não encontrado na busca: ${finalModId}` });
+          }
+        } else {
+          return res.status(400).json({ message: `Erro na busca do CurseForge: ${await searchRes.text()}` });
+        }
+      }
+
+      const resp = await fetch(`https://api.curseforge.com/v1/mods/${finalModId}/files?pageSize=50`, {
         headers: { 'x-api-key': cfKey, 'Accept': 'application/json' }
       });
-      if (!resp.ok) return res.status(400).json({ message: 'Erro CurseForge: ' + await resp.text() });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        return res.status(400).json({ message: `Erro CurseForge (${resp.status}): ${text}` });
+      }
       const data = await resp.json() as any;
       return res.json(data.data.map((f: any) => ({
         id: String(f.id),
