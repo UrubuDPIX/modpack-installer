@@ -1125,8 +1125,12 @@ if [ -n "$INSTALLER_JAR" ]; then
       java -jar "forge-fix-installer.jar" -installServer > "$LOG_FILE" 2>&1
       # Renomear para a versao antiga esperada pelo LaunchServer.sh
       OLD_VER=$(echo "$INSTALLER_JAR" | grep -oE '14\.23\.5\.[0-9]+' | head -1)
-      if [ -n "$OLD_VER" ] && [ -f "forge-1.12.2-14.23.5.2860-universal.jar" ]; then
-        cp "forge-1.12.2-14.23.5.2860-universal.jar" "forge-1.12.2-$OLD_VER-universal.jar"
+      if [ -n "$OLD_VER" ]; then
+        if [ -f "forge-1.12.2-14.23.5.2860-universal.jar" ]; then
+          cp "forge-1.12.2-14.23.5.2860-universal.jar" "forge-1.12.2-$OLD_VER-universal.jar"
+        elif [ -f "forge-1.12.2-14.23.5.2860.jar" ]; then
+          cp "forge-1.12.2-14.23.5.2860.jar" "forge-1.12.2-$OLD_VER-universal.jar"
+        fi
       fi
     else
       java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
