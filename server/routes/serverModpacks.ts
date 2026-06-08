@@ -353,4 +353,47 @@ router.get('/:id/modpack/metadata', async (req, res) => {
   }
 });
 
+// Retorna as versões disponíveis para o modpack instalado
+router.get('/:id/modpack/versions', async (req, res) => {
+  try {
+    const serverModpack = await prisma.serverModpack.findFirst({
+      where: { server_id: req.params.id }
+    });
+    if (!serverModpack) return res.status(404).json({ message: 'Nenhum modpack instalado' });
+    
+    const modpack = await prisma.modpack.findUnique({
+      where: { id: serverModpack.modpack_id }
+    });
+    if (!modpack) return res.status(404).json({ message: 'Modpack não encontrado no banco' });
+    
+    const sourceId = modpack.source_id || String(modpack.id);
+    
+    if ((modpack.source || '').toLowerCase() === 'modrinth') {
+      const resp = await fetch(`https://api.modrinth.com/v2/project/${sourceId}/version`);
+      if (!resp.ok) return res.status(400).json({ message: 'Erro Modrinth' });
+      const data = await resp.json() as any[];
+      return res.json(data.map((v: any) => ({
+        id: v.id,
+        name: v.name || v.version_number,
+        game_versions: v.game_versions
+      })));
+    } else {
+      const cfKey = await getCurseForgeKey();
+      if (!cfKey) return res.status(400).json({ message: 'Chave CurseForge não configurada no painel' });
+      const resp = await fetch(`https://api.curseforge.com/v1/mods/${sourceId}/files?pageSize=50`, {
+        headers: { 'x-api-key': cfKey, 'Accept': 'application/json' }
+      });
+      if (!resp.ok) return res.status(400).json({ message: 'Erro CurseForge: ' + await resp.text() });
+      const data = await resp.json() as any;
+      return res.json(data.data.map((f: any) => ({
+        id: String(f.id),
+        name: f.displayName || f.fileName,
+        game_versions: f.gameVersions
+      })));
+    }
+  } catch (err: any) {
+    res.status(500).json({ message: 'Erro interno', error: err.message });
+  }
+});
+
 export default router;

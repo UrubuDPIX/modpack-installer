@@ -488,53 +488,19 @@ export default function ModpacksContainer() {
     setFetchingVersions(true);
     setUpdateVersions([]);
     
-    // Fallback: se o ID for muito pequeno (id do banco), tenta buscar os metadados reais primeiro
-    let modpackId = installedModpack.id;
-    if (/^\d+$/.test(modpackId) && modpackId.length < 5 && id) {
-      try {
-        const metaRes = await fetch(`/api/client/servers/${id}/modpack/metadata`);
-        if (metaRes.ok) {
-          const meta = await metaRes.json();
-          if (meta.id) modpackId = meta.id;
-        }
-      } catch (e) {
-        console.error("Falha ao atualizar metadados:", e);
-      }
-    }
-
     try {
-      if ((installedModpack.provider || '').toLowerCase() === 'modrinth') {
-        const res = await fetch(`https://api.modrinth.com/v2/project/${modpackId}/version`);
-        if (!res.ok) throw new Error(`Modrinth API Error: ${res.status}`);
-        const data = await res.json();
-        setUpdateVersions(data.map((v: any) => ({
-          id: v.id,
-          name: v.name || v.version_number,
-          game_versions: v.game_versions
-        })));
-      } else {
-        if (!curseforgeKey) {
-          alert("Chave do CurseForge não configurada! Insira a chave nas configurações primeiro.");
-          setFetchingVersions(false);
-          return;
-        }
-        const res = await fetch(`https://api.curseforge.com/v1/mods/${modpackId}/files?pageSize=50`, {
-          headers: { "x-api-key": curseforgeKey, "Accept": "application/json" }
-        });
-        if (!res.ok) throw new Error(`CurseForge API Error: ${res.status} - ${await res.text()}`);
-        const data = await res.json();
-        if (!data.data || !Array.isArray(data.data)) {
-          throw new Error("Formato de resposta inválido do CurseForge");
-        }
-        setUpdateVersions(data.data.map((f: any) => ({
-          id: String(f.id),
-          name: f.displayName || f.fileName,
-          game_versions: f.gameVersions
-        })));
+      if (!id) throw new Error("ID do servidor não encontrado");
+      const res = await fetch(`/api/client/servers/${id}/modpack/versions`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `Erro da API: ${res.status}`);
       }
+      const data = await res.json();
+      setUpdateVersions(data);
     } catch (e: any) {
       console.error(e);
       alert(`Falha ao buscar versões: ${e.message}`);
+      setShowUpdateModal(false);
     } finally {
       setFetchingVersions(false);
     }
