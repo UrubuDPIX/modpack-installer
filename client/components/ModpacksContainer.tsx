@@ -120,6 +120,8 @@ export default function ModpacksContainer() {
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [progressModpackTitle, setProgressModpackTitle] = useState('');
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
+  const [loadingInstall, setLoadingInstall] = useState(false); // loading latest version
+  const [installVersionName, setInstallVersionName] = useState<string | null>(null);
 
   // Update Modal states
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -406,16 +408,53 @@ export default function ModpacksContainer() {
     fetchModpacks();
   };
 
-  const openInstallModal = (modpack: ModpackItem) => {
-    if (!modpack.latest_version || !modpack.latest_version.id) return;
-    setInstallModpackSlug(modpack.slug);
-    setInstallVersionId(modpack.latest_version.id);
+  const openInstallModal = async (modpack: ModpackItem) => {
+    setLoadingInstall(true);
     setInstallModpackTitle(modpack.title);
     setInstallModpackIcon(modpack.icon_url);
     setInstallModpackDownloads(modpack.downloads);
+    setInstallModpackSlug(modpack.slug);
     setDeleteServerFiles(false);
     setAcceptEula(false);
-    setShowInstallModal(true);
+    setInstallVersionId(null);
+    setInstallVersionName(null);
+
+    try {
+      if (provider === 'modrinth') {
+        // Busca a última versão real do Modrinth
+        const res = await fetch(`https://api.modrinth.com/v2/project/${modpack.slug}/version?limit=1`);
+        if (!res.ok) throw new Error('Erro Modrinth');
+        const versions = await res.json();
+        const latest = versions[0];
+        if (!latest) throw new Error('Nenhuma versão encontrada');
+        setInstallVersionId(latest.id);
+        setInstallVersionName(latest.name || latest.version_number);
+      } else {
+        // CurseForge: busca arquivos mais recentes do mod
+        if (!curseforgeKey) {
+          alert('Configure a chave do CurseForge primeiro.');
+          setLoadingInstall(false);
+          return;
+        }
+        // O id do CurseForge é numérico no slug ou id do modpack
+        const cfId = modpack.id;
+        const res = await fetch(
+          `https://api.curseforge.com/v1/mods/${cfId}/files?pageSize=1&sortField=5&sortOrder=desc`,
+          { headers: { 'x-api-key': curseforgeKey } }
+        );
+        if (!res.ok) throw new Error('Erro CurseForge');
+        const data = await res.json();
+        const latest = data.data?.[0];
+        if (!latest) throw new Error('Nenhuma versão encontrada');
+        setInstallVersionId(String(latest.id));
+        setInstallVersionName(latest.displayName || latest.fileName);
+      }
+      setShowInstallModal(true);
+    } catch (e: any) {
+      alert(`Não foi possível buscar a versão mais recente: ${e.message}`);
+    } finally {
+      setLoadingInstall(false);
+    }
   };
 
   const handleInstall = async () => {
@@ -829,10 +868,14 @@ export default function ModpacksContainer() {
                     </button>
                     <button
                       onClick={() => openInstallModal(modpack)}
-                      disabled={!modpack.latest_version || !id}
+                      disabled={loadingInstall || !id}
                       className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
                     >
-                      <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
+                      {loadingInstall ? (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
+                      ) : (
+                        <FontAwesomeIcon icon={faDownload} className="text-[10px]" />
+                      )}
                       Install
                     </button>
                   </div>
@@ -886,12 +929,10 @@ export default function ModpacksContainer() {
           <div className="p-6 space-y-5">
             {/* Selected version */}
             <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Selected Version</h3>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Versão Mais Recente</h3>
               <div className="bg-gray-700/50 border border-gray-600 rounded-lg p-3">
-                <p className="text-sm text-white font-medium">{modpacks.find((m) => m.slug === installModpackSlug)?.latest_version?.name || modpacks.find((m) => m.slug === installModpackSlug)?.latest_version?.version_number || "Latest"}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {(modpacks.find((m) => m.slug === installModpackSlug)?.latest_version?.game_versions || []).slice(0, 3).join(", ")} · {(modpacks.find((m) => m.slug === installModpackSlug)?.latest_version?.loaders || []).join(", ")}
-                </p>
+                <p className="text-sm text-white font-medium">{installVersionName || 'Carregando...'}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Esta é a versão mais recente disponível</p>
               </div>
             </div>
 
