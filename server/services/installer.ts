@@ -520,9 +520,9 @@ INSTALLER_JAR="${installerJar}"
 EXPECTED_JAR="${serverJar}"
 LOG_FILE="installer.log"
 
-# Procura por qualquer jar de servidor disponível
-findServerJar() {
-  # Prioridade 1: jar esperado
+# Procura APENAS por jars Forge (nunca vanilla)
+findForgeJar() {
+  # Prioridade 1: jar esperado (forge-VERSION.jar)
   [ -f "$EXPECTED_JAR" ] && { echo "$EXPECTED_JAR"; return; }
   # Prioridade 2: forge-*-universal.jar
   local universal=$(ls -1 forge-*-universal.jar 2>/dev/null | head -1)
@@ -530,28 +530,22 @@ findServerJar() {
   # Prioridade 3: forge-*.jar (sem -installer)
   local forgejar=$(ls -1 forge-*.jar 2>/dev/null | grep -v installer | head -1)
   [ -n "$forgejar" ] && { echo "$forgejar"; return; }
-  # Prioridade 4: minecraft_server.*.jar
-  local mcjar=$(ls -1 minecraft_server.*.jar 2>/dev/null | head -1)
-  [ -n "$mcjar" ] && { echo "$mcjar"; return; }
-  # Prioridade 5: qualquer jar exceto installer
-  local anyjar=$(ls -1 *.jar 2>/dev/null | grep -v installer | head -1)
-  [ -n "$anyjar" ] && { echo "$anyjar"; return; }
   echo ""
 }
 
-SERVER_JAR=$(findServerJar)
+SERVER_JAR=$(findForgeJar)
 
-# Se não achou nenhum jar de servidor, roda o instalador
+# Se não achou jar Forge, roda o instalador
 if [ -z "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] No server jar found. Running installer..."
+  echo "[Modpack Installer] No Forge jar found. Running installer..."
   echo "[Modpack Installer] Java: $(java -version 2>&1 | head -1)"
   echo "[Modpack Installer] Installer: $INSTALLER_JAR"
   
-  # Detecta versão do Minecraft a partir do nome do installer (forge-MCVER-FORGEVER-installer.jar)
+  # Detecta versão do Minecraft
   MC_VERSION=$(echo "$INSTALLER_JAR" | cut -d'-' -f2)
   echo "[Modpack Installer] Detected MC version: $MC_VERSION"
   
-  # Baixa minecraft_server.jar se necessário (Forge installer precisa dele)
+  # Baixa minecraft_server.jar (Forge installer precisa)
   SERVER_JAR_NAME="minecraft_server.$MC_VERSION.jar"
   if [ -n "$MC_VERSION" ] && [ ! -f "$SERVER_JAR_NAME" ]; then
     echo "[Modpack Installer] Downloading $SERVER_JAR_NAME..."
@@ -571,39 +565,47 @@ if [ -z "$SERVER_JAR" ]; then
     if [ -f "$SERVER_JAR_NAME" ]; then
       echo "[Modpack Installer] $SERVER_JAR_NAME downloaded successfully"
     else
-      echo "[Modpack Installer] Failed to download $SERVER_JAR_NAME, continuing anyway..."
+      echo "[Modpack Installer] Failed to download $SERVER_JAR_NAME"
     fi
   fi
   
-  # Limpa instalação anterior se houver
+  # Limpa instalação anterior
   rm -rf libraries/ forge*.log "$LOG_FILE"
   
   # Roda instalador
+  echo "[Modpack Installer] Running installer (attempt 1)..."
   java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
   INSTALLER_EXIT=$?
   
   if [ $INSTALLER_EXIT -ne 0 ]; then
-    echo "[Modpack Installer] Installer failed (exit $INSTALLER_EXIT). Retrying..."
+    echo "[Modpack Installer] Installer failed (exit $INSTALLER_EXIT). LOG:"
+    cat "$LOG_FILE" 2>/dev/null || echo "(empty log)"
+    echo "[Modpack Installer] Retrying after cleanup..."
     rm -rf libraries/ forge*.log "$LOG_FILE"
     java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
     INSTALLER_EXIT=$?
-    echo "[Modpack Installer] Retry exit code: $INSTALLER_EXIT"
+    if [ $INSTALLER_EXIT -ne 0 ]; then
+      echo "[Modpack Installer] Retry also failed (exit $INSTALLER_EXIT). LOG:"
+      cat "$LOG_FILE" 2>/dev/null || echo "(empty log)"
+      echo "[Modpack Installer] Attempting to extract universal jar from installer..."
+      jar xf "$INSTALLER_JAR" $(jar tf "$INSTALLER_JAR" | grep universal.jar) 2>/dev/null || true
+      unzip -j "$INSTALLER_JAR" "*universal.jar" 2>/dev/null || true
+    fi
   fi
   
-  # Procura jar novamente após instalação
-  SERVER_JAR=$(findServerJar)
+  # Procura jar Forge novamente
+  SERVER_JAR=$(findForgeJar)
 fi
 
 if [ -z "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] ERROR: No server jar found after installation!"
-  echo "[Modpack Installer] JAR files:"
+  echo "[Modpack Installer] ERROR: No Forge server jar found!"
+  echo "[Modpack Installer] JAR files in directory:"
   ls -1 *.jar 2>/dev/null || echo "(none)"
-  echo "[Modpack Installer] Installer log:"
-  cat "$LOG_FILE" 2>/dev/null || echo "(no log)"
+  echo "[Modpack Installer] Cannot start - this is a Forge modpack and Forge is not installed."
   exit 1
 fi
 
-echo "[Modpack Installer] Starting server with: $SERVER_JAR"
+echo "[Modpack Installer] Starting Forge server with: $SERVER_JAR"
 java -jar "$SERVER_JAR" nogui
 `;
         await fs.writeFile(scriptPath, scriptContent, 'utf-8');
