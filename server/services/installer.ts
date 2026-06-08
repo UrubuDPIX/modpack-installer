@@ -577,6 +577,44 @@ findForgeJar() {
 
 SERVER_JAR=$(findForgeJar)
 
+# Se não achou jar Forge, extrai do installer
+if [ -z "$SERVER_JAR" ]; then
+  echo "[Modpack Installer] Extracting from installer..."
+  mkdir -p installer_extract
+  cd installer_extract
+  jar xf "../$INSTALLER_JAR"
+  cd ..
+  
+  # Procura jar universal extraído
+  local extracted_universal=$(find installer_extract -name "*universal.jar" | head -1)
+  if [ -n "$extracted_universal" ]; then
+    cp "$extracted_universal" .
+    SERVER_JAR=$(basename "$extracted_universal")
+    echo "[Modpack Installer] Extracted: $SERVER_JAR"
+  fi
+  
+  # Copia libraries extraídas
+  if [ -d "installer_extract/libraries" ]; then
+    cp -r installer_extract/libraries/* libraries/ 2>/dev/null || mkdir -p libraries && cp -r installer_extract/libraries/* libraries/
+    echo "[Modpack Installer] Libraries extracted"
+  fi
+  
+  # Limpa extração
+  rm -rf installer_extract
+fi
+
+# Se ainda não achou, baixa do Maven
+if [ -z "$SERVER_JAR" ]; then
+  FORGE_FULL_VER=$(echo "$INSTALLER_JAR" | sed 's/forge-//' | sed 's/-installer.jar//')
+  UNIVERSAL_JAR="forge-\${FORGE_FULL_VER}-universal.jar"
+  echo "[Modpack Installer] Downloading \$UNIVERSAL_JAR from Maven..."
+  curl -fsSL "https://maven.minecraftforge.net/net/minecraftforge/forge/\${FORGE_FULL_VER}/\${UNIVERSAL_JAR}" -o "\$UNIVERSAL_JAR"
+  if [ -f "\$UNIVERSAL_JAR" ]; then
+    SERVER_JAR="\$UNIVERSAL_JAR"
+    echo "[Modpack Installer] Downloaded: $SERVER_JAR"
+  fi
+fi
+
 if [ -z "$SERVER_JAR" ]; then
   echo "[Modpack Installer] ERROR: No Forge server jar found!"
   ls -1 *.jar 2>/dev/null || echo "(no jars)"
