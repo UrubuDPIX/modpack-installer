@@ -80,8 +80,7 @@ const CLIENT_SIDE_MODS = [
   'discordrpc',
   'lambdynlights',
   'okzoomer',
-  'roughlyenoughitems',
-  'emi',
+  // NOTA: JEI, REI (roughlyenoughitems) e EMI têm funcionalidades server-side e são dependências obrigatórias
   'modmenu',
   'neat',
   'torohealth',
