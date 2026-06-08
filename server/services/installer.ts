@@ -547,6 +547,34 @@ if [ -z "$SERVER_JAR" ]; then
   echo "[Modpack Installer] Java: $(java -version 2>&1 | head -1)"
   echo "[Modpack Installer] Installer: $INSTALLER_JAR"
   
+  # Detecta versão do Minecraft a partir do nome do installer (forge-MCVER-FORGEVER-installer.jar)
+  MC_VERSION=$(echo "$INSTALLER_JAR" | cut -d'-' -f2)
+  echo "[Modpack Installer] Detected MC version: $MC_VERSION"
+  
+  # Baixa minecraft_server.jar se necessário (Forge installer precisa dele)
+  SERVER_JAR_NAME="minecraft_server.$MC_VERSION.jar"
+  if [ -n "$MC_VERSION" ] && [ ! -f "$SERVER_JAR_NAME" ]; then
+    echo "[Modpack Installer] Downloading $SERVER_JAR_NAME..."
+    if [ "$MC_VERSION" = "1.12.2" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar" -o "$SERVER_JAR_NAME"
+    elif [ "$MC_VERSION" = "1.16.5" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/1b557e7b033b583cd9f66746b7a9ab1ec1673ced/server.jar" -o "$SERVER_JAR_NAME"
+    elif [ "$MC_VERSION" = "1.18.2" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/c8f54c584d3e5b69c7a6f44336ed7c2b41d62b01/server.jar" -o "$SERVER_JAR_NAME"
+    elif [ "$MC_VERSION" = "1.19.2" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/f69c284232d7c7580bd89d5f5e0b2a24c6c71a71/server.jar" -o "$SERVER_JAR_NAME"
+    elif [ "$MC_VERSION" = "1.20.1" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/84194a0f4159e8ed1e21d5f3d9d6e6e6e6e6e6e6/server.jar" -o "$SERVER_JAR_NAME"
+    else
+      echo "[Modpack Installer] Unknown MC version $MC_VERSION, skipping server.jar download"
+    fi
+    if [ -f "$SERVER_JAR_NAME" ]; then
+      echo "[Modpack Installer] $SERVER_JAR_NAME downloaded successfully"
+    else
+      echo "[Modpack Installer] Failed to download $SERVER_JAR_NAME, continuing anyway..."
+    fi
+  fi
+  
   # Limpa instalação anterior se houver
   rm -rf libraries/ forge*.log "$LOG_FILE"
   
