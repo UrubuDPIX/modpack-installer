@@ -292,4 +292,49 @@ router.delete('/:id/modpack/uninstall', async (req, res) => {
   }
 });
 
+// Retorna metadados do modpack instalado (lido do arquivo .modpack_metadata.json)
+router.get('/:id/modpack/metadata', async (req, res) => {
+  try {
+    const serverId = req.params.id;
+    const serverDir = `/var/lib/pterodactyl/volumes/${serverId}`;
+    const metadataPath = `${serverDir}/.modpack_metadata.json`;
+    
+    const { promises: fsP } = require('fs');
+    try {
+      const content = await fsP.readFile(metadataPath, 'utf-8');
+      const metadata = JSON.parse(content);
+      res.json(metadata);
+    } catch {
+      // Also try to build metadata from DB
+      const serverModpack = await prisma.serverModpack.findFirst({
+        where: { server_id: serverId }
+      });
+      if (serverModpack) {
+        const modpack = await prisma.modpack.findUnique({
+          where: { id: serverModpack.modpack_id }
+        });
+        const version = await prisma.modpackVersion.findUnique({
+          where: { id: serverModpack.modpack_version_id }
+        });
+        if (modpack) {
+          res.json({
+            id: modpack.source_id || String(modpack.id),
+            name: modpack.name,
+            version: version?.version || 'unknown',
+            provider: modpack.source || 'unknown',
+            loader: modpack.modloader || '',
+            minecraftVersion: modpack.minecraft_version || '',
+            icon: modpack.icon || '',
+            installedAt: serverModpack.installed_at?.toISOString() || new Date().toISOString()
+          });
+          return;
+        }
+      }
+      res.status(404).json({ message: 'Nenhum modpack instalado' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar metadados', error });
+  }
+});
+
 export default router;

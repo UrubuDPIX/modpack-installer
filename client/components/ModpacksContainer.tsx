@@ -130,6 +130,18 @@ export default function ModpacksContainer() {
     if (saved) setCurseforgeKey(saved);
   }, []);
 
+  // Fetch installed modpack metadata
+  useEffect(() => {
+    if (!id) return;
+    fetch(`/api/client/servers/${id}/modpack/metadata`)
+      .then(res => {
+        if (!res.ok) throw new Error('No modpack');
+        return res.json();
+      })
+      .then(data => setInstalledModpack(data))
+      .catch(() => setInstalledModpack(null));
+  }, [id]);
+
   // Busca CurseForge automaticamente quando a chave é carregada
   useEffect(() => {
     if (provider === "curseforge" && curseforgeKey) {
@@ -453,9 +465,101 @@ export default function ModpacksContainer() {
     setError(null);
   };
 
+  const timeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins} min atrás`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h atrás`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d atrás`;
+    const months = Math.floor(days / 30);
+    return `${months} meses atrás`;
+  };
+
   return (
     <>
     <div className="p-6" style={{ maxWidth: 1200, margin: "0 auto" }}>
+      {/* Installed Modpack Banner */}
+      {installedModpack && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(30,58,138,0.6) 0%, rgba(30,40,80,0.8) 100%)',
+          border: '1px solid rgba(99,102,241,0.3)',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '20px',
+        }}>
+          <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1.5px', color: '#818cf8', marginBottom: '10px', textTransform: 'uppercase' }}>
+            Modpack Instalado Atualmente
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {installedModpack.icon ? (
+              <img
+                src={installedModpack.icon}
+                alt={installedModpack.name}
+                style={{ width: 56, height: 56, borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }}
+              />
+            ) : (
+              <div style={{ width: 56, height: 56, borderRadius: '10px', background: 'rgba(99,102,241,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <FontAwesomeIcon icon={faBox} style={{ fontSize: 24, color: '#818cf8' }} />
+              </div>
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '16px', fontWeight: 700, color: '#e2e8f0' }}>{installedModpack.name}</span>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  background: installedModpack.provider === 'curseforge' ? 'rgba(249,115,22,0.2)' : 'rgba(34,197,94,0.2)',
+                  color: installedModpack.provider === 'curseforge' ? '#fb923c' : '#4ade80',
+                  textTransform: 'capitalize',
+                }}>
+                  {installedModpack.provider}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '12px', color: '#94a3b8', flexWrap: 'wrap' }}>
+                {installedModpack.version && (
+                  <span>📦 {installedModpack.version}</span>
+                )}
+                {installedModpack.installedAt && (
+                  <span>⏱ Instalado {timeAgo(installedModpack.installedAt)}</span>
+                )}
+                {installedModpack.loader && (
+                  <span>⚙ Loader: {installedModpack.loader.toUpperCase()}</span>
+                )}
+                {installedModpack.minecraftVersion && (
+                  <span>🎮 Versão: {installedModpack.minecraftVersion}</span>
+                )}
+              </div>
+            </div>
+            <a
+              href={installedModpack.provider === 'curseforge'
+                ? `https://www.curseforge.com/minecraft/modpacks/${installedModpack.id}`
+                : `https://modrinth.com/modpack/${installedModpack.id}`
+              }
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                background: 'rgba(99,102,241,0.15)',
+                border: '1px solid rgba(99,102,241,0.3)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: '#a5b4fc',
+                fontSize: '14px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textDecoration: 'none',
+                flexShrink: 0,
+              }}
+              title="Ver no site"
+            >
+              <FontAwesomeIcon icon={faExternalLinkAlt} />
+            </a>
+          </div>
+        </div>
+      )}
       {/* Header with provider switcher */}
       <div className="flex items-center justify-between mb-4">
         <div>

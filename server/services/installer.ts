@@ -9,6 +9,28 @@ import { createWriteStream } from 'fs';
 
 const execAsync = promisify(exec);
 
+// Helper function to save modpack metadata for the frontend
+async function saveModpackMetadata(serverDir: string, provider: string, modpack: any, version: any) {
+  try {
+    const metadataPath = path.join(serverDir, '.modpack_metadata.json');
+    const metadata = {
+      id: modpack.id || modpack.slug || '',
+      name: modpack.name || '',
+      version: version.version || version.name || '',
+      provider: provider,
+      loader: version.loader || '',
+      minecraftVersion: version.minecraftVersion || '',
+      icon: modpack.icon_url || modpack.logo_url || '',
+      installedAt: new Date().toISOString()
+    };
+    await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
+    // Ensure Pterodactyl user can read it
+    await execAsync(`chown 999:999 ${metadataPath} 2>/dev/null || chown pterodactyl:pterodactyl ${metadataPath} 2>/dev/null || true`);
+  } catch (e) {
+    console.error('[Metadata] Falha ao salvar .modpack_metadata.json:', e);
+  }
+}
+
 // Categorias do CurseForge que indicam mods client-side (não devem ir pro servidor)
 const CF_CLIENT_SIDE_CATEGORIES = [
   422, // Mapas e Minimaps (JourneyMap, Xaero's)
@@ -473,6 +495,7 @@ async function processInstallation(
     }
     
     log.push(`[${new Date().toISOString()}] Instalação concluída com sucesso!`);
+    await saveModpackMetadata(serverDir, version.modpack?.source || 'unknown', version.modpack, version);
     
     // Atualiza status
     const record = await prisma.serverModpack.findFirst({
