@@ -612,6 +612,7 @@ async function downloadFile(url: string, dest: string, redirectCount = 0): Promi
         const redirectUrl = response.headers.location;
         if (!redirectUrl) {
           file.close();
+          fs.unlink(dest).catch(() => {});
           reject(new Error(`HTTP ${response.statusCode} sem header Location`));
           return;
         }
@@ -625,6 +626,7 @@ async function downloadFile(url: string, dest: string, redirectCount = 0): Promi
 
       if (response.statusCode !== 200) {
         file.close();
+        fs.unlink(dest).catch(() => {});
         reject(new Error(`HTTP ${response.statusCode} para ${url}`));
         return;
       }
@@ -1370,7 +1372,12 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
         const loaders = manifest.minecraft?.modLoaders || [];
         const forgeLoader = loaders.find((l: any) => l.id && l.id.startsWith('forge-'));
         if (forgeLoader) {
-          forgeVersion = forgeLoader.id.replace('forge-', '');
+          let extracted = forgeLoader.id.replace('forge-', '');
+          // Exemplo: FTB pack diz forge-40.2.34 mas a maven precisa de 1.18.2-40.2.34
+          if (!extracted.startsWith(mcVersion)) {
+            extracted = `${mcVersion}-${extracted}`;
+          }
+          forgeVersion = extracted;
           log.push(`[${new Date().toISOString()}] Forge version detectada do manifest.json: ${forgeVersion}`);
         }
       }
