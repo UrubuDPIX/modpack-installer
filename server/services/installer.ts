@@ -577,45 +577,11 @@ findForgeJar() {
 
 SERVER_JAR=$(findForgeJar)
 
-# Verifica se libraries existem
-if [ ! -d "libraries" ] || [ ! -f "libraries/net/minecraft/launchwrapper/1.12/launchwrapper-1.12.jar" ]; then
-  echo "[Modpack Installer] Libraries missing or incomplete. Extracting from installer..."
-  mkdir -p installer_extract
-  cd installer_extract
-  jar xf "../$INSTALLER_JAR"
-  cd ..
-  
-  # Procura jar universal extraído
-  if [ -z "$SERVER_JAR" ]; then
-    local extracted_universal=$(find installer_extract -name "*universal.jar" | head -1)
-    if [ -n "$extracted_universal" ]; then
-      cp "$extracted_universal" .
-      SERVER_JAR=$(basename "$extracted_universal")
-      echo "[Modpack Installer] Extracted: $SERVER_JAR"
-    fi
-  fi
-  
-  # Copia libraries extraídas
-  if [ -d "installer_extract/libraries" ]; then
-    mkdir -p libraries
-    cp -r installer_extract/libraries/* libraries/
-    echo "[Modpack Installer] Libraries extracted to libraries/"
-  fi
-  
-  # Limpa extração
-  rm -rf installer_extract
-fi
-
-# Se ainda não achou, baixa do Maven
-if [ -z "$SERVER_JAR" ]; then
-  FORGE_FULL_VER=$(echo "$INSTALLER_JAR" | sed 's/forge-//' | sed 's/-installer.jar//')
-  UNIVERSAL_JAR="forge-\${FORGE_FULL_VER}-universal.jar"
-  echo "[Modpack Installer] Downloading \$UNIVERSAL_JAR from Maven..."
-  curl -fsSL "https://maven.minecraftforge.net/net/minecraftforge/forge/\${FORGE_FULL_VER}/\${UNIVERSAL_JAR}" -o "\$UNIVERSAL_JAR"
-  if [ -f "\$UNIVERSAL_JAR" ]; then
-    SERVER_JAR="\$UNIVERSAL_JAR"
-    echo "[Modpack Installer] Downloaded: $SERVER_JAR"
-  fi
+# Se não achou jar Forge ou libraries, roda o instalador
+if [ -z "$SERVER_JAR" ] || [ ! -d "libraries" ] || [ ! -f "libraries/net/minecraft/launchwrapper/1.12/launchwrapper-1.12.jar" ]; then
+  echo "[Modpack Installer] No Forge jar or libraries. Running installer..."
+  java -jar "$INSTALLER_JAR" --installServer
+  SERVER_JAR=$(findForgeJar)
 fi
 
 if [ -z "$SERVER_JAR" ]; then
