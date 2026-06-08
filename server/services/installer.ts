@@ -3,7 +3,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
-// Node.js native modules (loaded inline to avoid TS issues)
+import https from 'https';
+import http from 'http';
+import { createWriteStream } from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -518,9 +520,6 @@ async function runCommandWithLog(command: string, log: string[]): Promise<void> 
 async function downloadFile(url: string, dest: string): Promise<void> {
   console.log(`[Download] URL: ${url}`);
   return new Promise((resolve, reject) => {
-    const https = require('https');
-    const http = require('http');
-    const { createWriteStream } = require('fs');
     const client = url.startsWith('https:') ? https : http;
     const file = createWriteStream(dest);
     let downloaded = 0;
