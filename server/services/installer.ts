@@ -20,7 +20,8 @@ async function saveModpackMetadata(serverDir: string, provider: string, modpack:
       provider: provider,
       loader: version.loader || '',
       minecraftVersion: version.minecraftVersion || '',
-      icon: modpack.icon_url || modpack.logo_url || '',
+      icon: modpack.icon_url || modpack.logo_url || modpack.icon || '',
+      description: modpack.description || modpack.summary || '',
       installedAt: new Date().toISOString()
     };
     await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');

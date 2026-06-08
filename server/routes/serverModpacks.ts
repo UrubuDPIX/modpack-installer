@@ -325,6 +325,7 @@ router.get('/:id/modpack/metadata', async (req, res) => {
             loader: modpack.modloader || '',
             minecraftVersion: modpack.minecraft_version || '',
             icon: modpack.icon || '',
+            description: modpack.description || '',
             installedAt: serverModpack.installed_at?.toISOString() || new Date().toISOString()
           });
           return;

@@ -483,80 +483,119 @@ export default function ModpacksContainer() {
       {/* Installed Modpack Banner */}
       {installedModpack && (
         <div style={{
-          background: 'linear-gradient(135deg, rgba(30,58,138,0.6) 0%, rgba(30,40,80,0.8) 100%)',
-          border: '1px solid rgba(99,102,241,0.3)',
+          background: '#1A1C23',
           borderRadius: '12px',
-          padding: '16px 20px',
-          marginBottom: '20px',
+          padding: '20px',
+          marginBottom: '24px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
         }}>
-          <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1.5px', color: '#818cf8', marginBottom: '10px', textTransform: 'uppercase' }}>
-            Modpack Instalado Atualmente
+          <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1px', color: '#94A3B8', marginBottom: '16px', textTransform: 'uppercase' }}>
+            Most Recently Installed Modpack
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', paddingBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
             {installedModpack.icon ? (
               <img
                 src={installedModpack.icon}
                 alt={installedModpack.name}
-                style={{ width: 56, height: 56, borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }}
+                style={{ width: 64, height: 64, borderRadius: '12px', objectFit: 'cover', flexShrink: 0, border: '2px solid rgba(255,255,255,0.05)' }}
               />
             ) : (
-              <div style={{ width: 56, height: 56, borderRadius: '10px', background: 'rgba(99,102,241,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '12px', background: 'rgba(99,102,241,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '2px solid rgba(255,255,255,0.05)' }}>
                 <FontAwesomeIcon icon={faBox} style={{ fontSize: 24, color: '#818cf8' }} />
               </div>
             )}
+            
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '16px', fontWeight: 700, color: '#e2e8f0' }}>{installedModpack.name}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '20px', fontWeight: 700, color: '#F8FAFC' }}>{installedModpack.name}</span>
                 <span style={{
                   fontSize: '11px',
                   fontWeight: 600,
                   padding: '2px 8px',
-                  borderRadius: '4px',
-                  background: installedModpack.provider === 'curseforge' ? 'rgba(249,115,22,0.2)' : 'rgba(34,197,94,0.2)',
-                  color: installedModpack.provider === 'curseforge' ? '#fb923c' : '#4ade80',
+                  borderRadius: '6px',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: '#94A3B8',
                   textTransform: 'capitalize',
+                  border: '1px solid rgba(255,255,255,0.05)'
                 }}>
                   {installedModpack.provider}
                 </span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '12px', color: '#94a3b8', flexWrap: 'wrap' }}>
-                {installedModpack.version && (
-                  <span>📦 {installedModpack.version}</span>
-                )}
-                {installedModpack.installedAt && (
-                  <span>⏱ Instalado {timeAgo(installedModpack.installedAt)}</span>
-                )}
-                {installedModpack.loader && (
-                  <span>⚙ Loader: {installedModpack.loader.toUpperCase()}</span>
-                )}
-                {installedModpack.minecraftVersion && (
-                  <span>🎮 Versão: {installedModpack.minecraftVersion}</span>
-                )}
-              </div>
+              <p style={{ fontSize: '14px', color: '#CBD5E1', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {installedModpack.description || 'Nenhuma descrição disponível para este modpack.'}
+              </p>
             </div>
-            <a
-              href={installedModpack.provider === 'curseforge'
-                ? `https://www.curseforge.com/minecraft/modpacks/${installedModpack.id}`
-                : `https://modrinth.com/modpack/${installedModpack.id}`
-              }
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                background: 'rgba(99,102,241,0.15)',
-                border: '1px solid rgba(99,102,241,0.3)',
-                borderRadius: '8px',
-                padding: '8px 12px',
-                color: '#a5b4fc',
-                fontSize: '14px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textDecoration: 'none',
-                flexShrink: 0,
-              }}
-              title="Ver no site"
-            >
-              <FontAwesomeIcon icon={faExternalLinkAlt} />
-            </a>
+            
+            <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+              <a
+                href={installedModpack.provider === 'curseforge'
+                  ? `https://www.curseforge.com/minecraft/modpacks/${installedModpack.id}`
+                  : `https://modrinth.com/modpack/${installedModpack.id}`
+                }
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#CBD5E1',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textDecoration: 'none'
+                }}
+                className="hover:bg-gray-700"
+                title="Ver no site"
+              >
+                <FontAwesomeIcon icon={faExternalLinkAlt} />
+              </a>
+              <button
+                onClick={() => {
+                  setSearchQuery(installedModpack.name);
+                  fetchModpacks();
+                }}
+                style={{
+                  background: '#818CF8',
+                  borderRadius: '8px',
+                  padding: '10px 16px',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  border: 'none'
+                }}
+                className="hover:bg-indigo-500"
+              >
+                <FontAwesomeIcon icon={faCog} /> Change Version
+              </button>
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', fontSize: '13px', color: '#94A3B8', paddingTop: '16px' }}>
+            {installedModpack.version && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FontAwesomeIcon icon={faBox} style={{ opacity: 0.7 }} /> {installedModpack.name} - {installedModpack.version}
+              </span>
+            )}
+            {installedModpack.installedAt && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FontAwesomeIcon icon={faCheck} style={{ opacity: 0.7 }} /> Installed {timeAgo(installedModpack.installedAt)}
+              </span>
+            )}
+            {installedModpack.loader && (
+              <span>Loader: {installedModpack.loader.toUpperCase()}</span>
+            )}
+            {installedModpack.minecraftVersion && (
+              <span>Version: {installedModpack.minecraftVersion}</span>
+            )}
           </div>
         </div>
       )}
