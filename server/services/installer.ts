@@ -194,35 +194,6 @@ async function processInstallation(
     
     if (isServerPack) {
       log.push(`[${new Date().toISOString()}] Server Pack detectado! Pulando download de mods individuais.`);
-      
-      // Instala Forge/NeoForge no backend usando Docker (tem internet) antes do container iniciar
-      const javaImage = getJavaImageForVersion(await detectMinecraftVersion(serverDir, version));
-      
-      if (hasForgeInstaller) {
-        const installerJar = (await fs.readdir(serverDir)).find((f: string) => f.startsWith('forge-') && f.endsWith('-installer.jar'));
-        if (installerJar && !await directoryExists(path.join(serverDir, 'libraries'))) {
-          log.push(`[${new Date().toISOString()}] Instalando Forge via Docker no backend...`);
-          try {
-            await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`, log);
-            log.push(`[${new Date().toISOString()}] Forge instalado no backend com libraries`);
-          } catch (preInstallErr: any) {
-            log.push(`[${new Date().toISOString()}] AVISO: Pre-instalação do Forge falhou: ${preInstallErr?.message || preInstallErr}`);
-          }
-        }
-      }
-      
-      if (hasNeoForgeInstaller) {
-        const installerJar = (await fs.readdir(serverDir)).find((f: string) => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
-        if (installerJar && !await directoryExists(path.join(serverDir, 'libraries'))) {
-          log.push(`[${new Date().toISOString()}] Instalando NeoForge via Docker no backend...`);
-          try {
-            await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`, log);
-            log.push(`[${new Date().toISOString()}] NeoForge instalado no backend com libraries`);
-          } catch (preInstallErr: any) {
-            log.push(`[${new Date().toISOString()}] AVISO: Pre-instalação do NeoForge falhou: ${preInstallErr?.message || preInstallErr}`);
-          }
-        }
-      }
     } else {
       // Baixa mods do modrinth.index.json (funciona para QUALQUER modloader)
       log.push(`[${new Date().toISOString()}] Verificando modrinth.index.json...`);
@@ -496,20 +467,6 @@ async function processInstallation(
       }
     }
     
-    // Detecta e configura startup automaticamente
-    log.push(`[${new Date().toISOString()}] Detectando tipo de modpack e configurando startup...`);
-    try {
-      const mcVersion = await detectMinecraftVersion(serverDir, version);
-      const startupCmd = await detectAndConfigureStartup(serverId, serverDir, mcVersion, version);
-      if (startupCmd) {
-        log.push(`[${new Date().toISOString()}] Startup configurado: ${startupCmd}`);
-      } else {
-        log.push(`[${new Date().toISOString()}] AVISO: Não foi possível detectar startup automaticamente`);
-      }
-    } catch (e: any) {
-      log.push(`[${new Date().toISOString()}] AVISO: Falha ao configurar startup: ${e?.message || e}`);
-    }
-    
     // Inicia servidor automaticamente
     log.push(`[${new Date().toISOString()}] Iniciando servidor...`);
     try {
@@ -537,45 +494,12 @@ async function processInstallation(
     }
   } finally {
     clearInterval(flushInterval);
-    // Garante que auto-install.sh seja criado diretamente no disco
+    // Detecta loader, pré-instala se necessário, e atualiza startup no painel
     try {
-      const files = await fs.readdir(serverDir);
-      const installerJar = files.find((f: string) => (f.startsWith('forge-') || f.startsWith('neoforge-')) && f.endsWith('-installer.jar'));
-      if (installerJar) {
-        const serverJar = installerJar.replace('-installer.jar', '.jar');
-        const scriptPath = path.join(serverDir, 'auto-install.sh');
-        
-        const scriptContent = `#!/bin/bash
-INSTALLER_JAR="${installerJar}"
-EXPECTED_JAR="${serverJar}"
-
-# Procura APENAS por jars Forge (nunca vanilla)
-findForgeJar() {
-  [ -f "$EXPECTED_JAR" ] && { echo "$EXPECTED_JAR"; return; }
-  local universal=$(ls -1 forge-*-universal.jar 2>/dev/null | head -1)
-  [ -n "$universal" ] && { echo "$universal"; return; }
-  local forgejar=$(ls -1 forge-*.jar 2>/dev/null | grep -v installer | head -1)
-  [ -n "$forgejar" ] && { echo "$forgejar"; return; }
-  echo ""
-}
-
-SERVER_JAR=$(findForgeJar)
-
-if [ -z "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] ERROR: No Forge server jar found!"
-  ls -1 *.jar 2>/dev/null || echo "(no jars)"
-  exit 1
-fi
-
-echo "[Modpack Installer] Starting Forge server with: $SERVER_JAR"
-java -jar "$SERVER_JAR" nogui
-`;
-        await fs.writeFile(scriptPath, scriptContent, 'utf-8');
-        await execAsync(`chmod +x ${scriptPath}`);
-        console.log(`[Installer] auto-install.sh criado em ${scriptPath}`);
-      }
+      const mcVersion = await detectMinecraftVersion(serverDir, version);
+      await detectAndConfigureStartup(serverId, serverDir, mcVersion, version);
     } catch (e: any) {
-      console.warn(`[Installer] Falha ao criar auto-install.sh no finally: ${e?.message || e}`);
+      console.warn(`[Installer] Falha no detectAndConfigureStartup no finally: ${e?.message || e}`);
     }
   }
 }
@@ -968,9 +892,29 @@ async function startServer(serverId: string): Promise<void> {
 }
 
 async function detectAndConfigureStartup(serverId: string, serverDir: string, mcVersion: string, version?: any): Promise<string | null> {
-  const files = await fs.readdir(serverDir);
+  let files = await fs.readdir(serverDir);
   let startupCommand: string | null = null;
   let detectedLoader = 'unknown';
+
+  // --- ETAPA 0: Pré-instala Forge/NeoForge com Docker se necessário ---
+  const installerJar = files.find((f: string) => (f.startsWith('forge-') || f.startsWith('neoforge-')) && f.endsWith('-installer.jar'));
+  if (installerJar) {
+    const serverJar = installerJar.replace('-installer.jar', '.jar');
+    const librariesExist = await directoryExists(path.join(serverDir, 'libraries'));
+    const jarExists = await fileExists(path.join(serverDir, serverJar));
+    if (!librariesExist || !jarExists) {
+      console.log(`[Detector] Pré-instalando ${installerJar} via Docker...`);
+      try {
+        const javaImage = getJavaImageForVersion(mcVersion);
+        await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`);
+        console.log(`[Detector] Forge instalado com sucesso`);
+        // Re-escaneia arquivos após instalação
+        files = await fs.readdir(serverDir);
+      } catch (e: any) {
+        console.error(`[Detector] ERRO na pré-instalação: ${e?.message || e}`);
+      }
+    }
+  }
 
   // --- ETAPA 1: Detecta loader a partir dos dados do modpack ---
   let modpackType = 'unknown';
@@ -1115,9 +1059,8 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
   console.log(`[Detector] MC: ${mcVersion}`);
   console.log(`[Detector] Startup: ${startupCommand}`);
 
-  // --- ETAPA 5: Cria auto-install.sh para Forge/NeoForge com installer ---
-  const installerJar = files.find((f: string) => (f.startsWith('forge-') || f.startsWith('neoforge-')) && f.endsWith('-installer.jar'));
-  if (installerJar && (detectedLoader === 'forge' || detectedLoader === 'neoforge')) {
+  // --- ETAPA 5: Se ainda não tem jar, cria auto-install.sh como fallback ---
+  if (!startupCommand && installerJar && (detectedLoader === 'forge' || detectedLoader === 'neoforge')) {
     console.log(`[Detector] Criando auto-install.sh com ${installerJar}`);
     const wrapperScript = `#!/bin/bash
 INSTALLER_JAR="${installerJar}"
