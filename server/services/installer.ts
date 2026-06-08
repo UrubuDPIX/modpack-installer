@@ -1273,6 +1273,7 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
       throw forgeDownloadErr;
     }
   }
+  }
   
   log.push(`[${new Date().toISOString()}] Instalando Forge...`);
   const javaImage = getJavaImageForVersion(mcVersion);
