@@ -273,7 +273,8 @@ router.post('/:id/modpack', async (req, res) => {
       });
     }
 
-    const result = await installModpack(serverId, String(modpack.id), String(modpackVersion.id), 'install');
+    const shouldDelete = delete_files === true || delete_files === 'true' || delete_files === 1 || delete_files === '1';
+    const result = await installModpack(serverId, String(modpack.id), String(modpackVersion.id), 'install', shouldDelete);
     res.json({ success: true, message: 'Instalação iniciada', jobId: result.jobId });
   } catch (error: any) {
     console.error('[Modpack Installer] Erro ao instalar modpack:', error);

@@ -50,7 +50,8 @@ export async function installModpack(
   serverId: string,
   modpackId: string,
   versionId: string,
-  action: string
+  action: string,
+  deleteFiles: boolean = true
 ): Promise<InstallResult> {
   // Busca dados do modpack e versão
   const version = await prisma.modpackVersion.findUnique({
@@ -85,14 +86,15 @@ export async function installModpack(
   });
 
   // Inicia instalação em background
-  processInstallation(serverId, version).catch(console.error);
+  processInstallation(serverId, version, deleteFiles).catch(console.error);
 
   return { jobId: String(serverModpack.id) };
 }
 
 async function processInstallation(
   serverId: string,
-  version: any
+  version: any,
+  deleteFiles: boolean = true
 ) {
   const log: string[] = [];
   const originalPush = log.push;
@@ -128,34 +130,42 @@ async function processInstallation(
   // Diretório do servidor (exemplo - ajustar conforme estrutura Jexactyl)
   const serverDir = `/var/lib/pterodactyl/volumes/${serverId}`;
   
+  // Pastas que NUNCA devem ser apagadas numa atualização
+  const PRESERVED_DIRS = ['world', 'world_nether', 'world_the_end', 'logs', 'playerdata', 'crash-reports', 'local', 'backups'];
+  // Arquivos/pastas que SÃO seguros de limpar numa atualização
+  const UPDATE_CLEANUP = ['mods', 'libraries', 'config', 'coremods', 'defaultconfigs', 'kubejs', 'scripts', 'server.jar', 'user_jvm_args.txt', 'run.sh', 'run.bat'];
+
   try {
     log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.version}`);
+    log.push(`[${new Date().toISOString()}] Modo: ${deleteFiles ? 'Instalação Completa (apagar tudo)' : 'Atualização (preservar mundo e dados)'}`);
     
     // Cria diretório se não existir
     await fs.mkdir(serverDir, { recursive: true });
     
-    // Limpa diretório do servidor (remove arquivos de instalações anteriores)
-    log.push(`[${new Date().toISOString()}] Limpando diretório do servidor...`);
-    try {
-      await cleanServerDir(serverDir);
-      log.push(`[${new Date().toISOString()}] Diretório limpo com sucesso`);
-    } catch (e: any) {
-      log.push(`[${new Date().toISOString()}] AVISO: Falha ao limpar diretório: ${e?.message || e}`);
+    if (deleteFiles) {
+      // INSTALAÇÃO COMPLETA: limpa tudo
+      log.push(`[${new Date().toISOString()}] Limpando diretório do servidor...`);
+      try {
+        await cleanServerDir(serverDir);
+        log.push(`[${new Date().toISOString()}] Diretório limpo com sucesso`);
+      } catch (e: any) {
+        log.push(`[${new Date().toISOString()}] AVISO: Falha ao limpar diretório: ${e?.message || e}`);
+      }
+      await cleanServerDirectory(serverDir);
+    } else {
+      // ATUALIZAÇÃO: remove APENAS arquivos de mods/loader, preserva mundo e dados
+      log.push(`[${new Date().toISOString()}] Modo atualização: removendo apenas mods e configurações antigas...`);
+      for (const target of UPDATE_CLEANUP) {
+        const targetPath = path.join(serverDir, target);
+        try {
+          await fs.rm(targetPath, { recursive: true, force: true });
+          log.push(`[${new Date().toISOString()}] Removido: ${target}`);
+        } catch (e: any) {
+          // ignora se não existir
+        }
+      }
+      log.push(`[${new Date().toISOString()}] Preservados: ${PRESERVED_DIRS.join(', ')}`);
     }
-    
-    // Backup do mundo ANTES de limpar
-    const worldBackup = path.join(serverDir, 'world_backup');
-    const worldDir = path.join(serverDir, 'world');
-    if (await directoryExists(worldDir)) {
-      log.push(`[${new Date().toISOString()}] Fazendo backup do mundo...`);
-      await execAsync(`rm -rf ${worldBackup} && cp -r ${worldDir} ${worldBackup}`).catch((e: any) => {
-        log.push(`[${new Date().toISOString()}] AVISO: Falha no backup do mundo: ${e?.message || e}`);
-      });
-    }
-    
-    // Limpa arquivos antigos (antes de baixar)
-    log.push(`[${new Date().toISOString()}] Limpando instalação anterior...`);
-    await cleanServerDirectory(serverDir);
     
     // Download do modpack
     log.push(`[${new Date().toISOString()}] Baixando modpack...`);
