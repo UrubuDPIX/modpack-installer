@@ -303,6 +303,21 @@ router.get('/:id/modpack/metadata', async (req, res) => {
     try {
       const content = await fsP.readFile(metadataPath, 'utf-8');
       const metadata = JSON.parse(content);
+      
+      // Patch para garantir que o ID retornado seja o source_id (CurseForge ID/Modrinth slug)
+      // pois versões antigas salvavam o ID do banco de dados
+      const serverModpack = await prisma.serverModpack.findFirst({
+        where: { server_id: serverId }
+      });
+      if (serverModpack) {
+        const dbModpack = await prisma.modpack.findUnique({
+          where: { id: serverModpack.modpack_id }
+        });
+        if (dbModpack?.source_id) {
+          metadata.id = dbModpack.source_id;
+        }
+      }
+      
       res.json(metadata);
     } catch {
       // Also try to build metadata from DB

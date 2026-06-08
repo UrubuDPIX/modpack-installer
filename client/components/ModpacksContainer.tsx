@@ -971,11 +971,18 @@ export default function ModpacksContainer() {
     {showUpdateModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
         <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-          <div className="p-6 border-b border-gray-700">
-            <h2 className="text-xl font-bold text-white">Atualizar Modpack</h2>
-            <p className="text-sm text-gray-400 mt-1">
-              Escolha a versão para atualizar. Seu mundo, logs e dados de jogadores serão mantidos.
-            </p>
+          <div className="flex items-start gap-4 p-6 border-b border-gray-700">
+            <img
+              src={installedModpack.icon || "/default-modpack.png"}
+              alt={installedModpack.name}
+              className="w-14 h-14 rounded-lg object-cover border border-gray-600 flex-shrink-0"
+            />
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-bold text-white truncate">Atualizar {installedModpack.name}</h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Versão Instalada: {installedModpack.version}
+              </p>
+            </div>
           </div>
           
           <div className="p-6">
