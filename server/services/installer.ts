@@ -1178,6 +1178,9 @@ elif [ -f "ServerStart.sh" ]; then
 elif [ -f "startserver.sh" ]; then
   echo "[Modpack Installer] Starting via startserver.sh..."
   bash startserver.sh
+elif [ -f "run.sh" ]; then
+  echo "[Modpack Installer] Starting via run.sh..."
+  bash run.sh
 else
   SERVER_JAR=$(findForgeJar)
   if [ -n "$SERVER_JAR" ]; then
