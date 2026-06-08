@@ -587,14 +587,25 @@ if [ -z "$SERVER_JAR" ]; then
     if [ $INSTALLER_EXIT -ne 0 ]; then
       echo "[Modpack Installer] Retry also failed (exit $INSTALLER_EXIT). LOG:"
       cat "$LOG_FILE" 2>/dev/null || echo "(empty log)"
-      echo "[Modpack Installer] Attempting to extract universal jar from installer..."
-      jar xf "$INSTALLER_JAR" $(jar tf "$INSTALLER_JAR" | grep universal.jar) 2>/dev/null || true
-      unzip -j "$INSTALLER_JAR" "*universal.jar" 2>/dev/null || true
     fi
   fi
   
-  # Procura jar Forge novamente
+  # Procura jar Forge após instalação
   SERVER_JAR=$(findForgeJar)
+  
+  # Fallback: baixa universal.jar direto do Maven se instalador falhou
+  if [ -z "$SERVER_JAR" ]; then
+    FORGE_FULL_VER=$(echo "$INSTALLER_JAR" | sed 's/forge-//' | sed 's/-installer.jar//')
+    UNIVERSAL_JAR="forge-\${FORGE_FULL_VER}-universal.jar"
+    echo "[Modpack Installer] Downloading universal jar from Maven: \$UNIVERSAL_JAR..."
+    curl -fsSL "https://maven.minecraftforge.net/net/minecraftforge/forge/\${FORGE_FULL_VER}/\${UNIVERSAL_JAR}" -o "\$UNIVERSAL_JAR"
+    if [ -f "\$UNIVERSAL_JAR" ]; then
+      echo "[Modpack Installer] Universal jar downloaded successfully"
+      SERVER_JAR="\$UNIVERSAL_JAR"
+    else
+      echo "[Modpack Installer] Failed to download universal jar from Maven"
+    fi
+  fi
 fi
 
 if [ -z "$SERVER_JAR" ]; then
