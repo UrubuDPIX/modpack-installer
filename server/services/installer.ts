@@ -195,28 +195,15 @@ async function processInstallation(
     if (isServerPack) {
       log.push(`[${new Date().toISOString()}] Server Pack detectado! Pulando download de mods individuais.`);
       
-      // Instala Forge/NeoForge no backend (que tem internet) antes do container iniciar
+      // Instala Forge/NeoForge no backend usando Docker (tem internet) antes do container iniciar
+      const javaImage = getJavaImageForVersion(await detectMinecraftVersion(serverDir, version));
+      
       if (hasForgeInstaller) {
         const installerJar = (await fs.readdir(serverDir)).find((f: string) => f.startsWith('forge-') && f.endsWith('-installer.jar'));
         if (installerJar && !await directoryExists(path.join(serverDir, 'libraries'))) {
-          log.push(`[${new Date().toISOString()}] Instalando Forge no backend (pre-install)...`);
+          log.push(`[${new Date().toISOString()}] Instalando Forge via Docker no backend...`);
           try {
-            const mcVersion = await detectMinecraftVersion(serverDir, version);
-            const mcServerJar = path.join(serverDir, `minecraft_server.${mcVersion}.jar`);
-            if (!await fileExists(mcServerJar)) {
-              const mcUrls: Record<string, string> = {
-                '1.12.2': 'https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar',
-                '1.16.5': 'https://piston-data.mojang.com/v1/objects/1b557e7b033b583cd9f66746b7a9ab1ec1673ced/server.jar',
-                '1.18.2': 'https://piston-data.mojang.com/v1/objects/c8f54c584d3e5b69c7a6f44336ed7c2b41d62b01/server.jar',
-                '1.19.2': 'https://piston-data.mojang.com/v1/objects/f69c284232d7c7580bd89d5f5e0b2a24c6c71a71/server.jar',
-                '1.20.1': 'https://piston-data.mojang.com/v1/objects/84194a0f4159e8ed1e21d5f3d9d6e6e6e6e6e6e6/server.jar'
-              };
-              if (mcUrls[mcVersion]) {
-                await downloadFile(mcUrls[mcVersion], mcServerJar);
-                log.push(`[${new Date().toISOString()}] minecraft_server.${mcVersion}.jar baixado`);
-              }
-            }
-            await execAsync(`cd ${serverDir} && java -jar ${installerJar} --installServer`);
+            await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`, log);
             log.push(`[${new Date().toISOString()}] Forge instalado no backend com libraries`);
           } catch (preInstallErr: any) {
             log.push(`[${new Date().toISOString()}] AVISO: Pre-instalação do Forge falhou: ${preInstallErr?.message || preInstallErr}`);
@@ -227,10 +214,9 @@ async function processInstallation(
       if (hasNeoForgeInstaller) {
         const installerJar = (await fs.readdir(serverDir)).find((f: string) => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
         if (installerJar && !await directoryExists(path.join(serverDir, 'libraries'))) {
-          log.push(`[${new Date().toISOString()}] Instalando NeoForge no backend (pre-install)...`);
+          log.push(`[${new Date().toISOString()}] Instalando NeoForge via Docker no backend...`);
           try {
-            const mcVersion = await detectMinecraftVersion(serverDir, version);
-            await execAsync(`cd ${serverDir} && java -jar ${installerJar} --installServer`);
+            await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`, log);
             log.push(`[${new Date().toISOString()}] NeoForge instalado no backend com libraries`);
           } catch (preInstallErr: any) {
             log.push(`[${new Date().toISOString()}] AVISO: Pre-instalação do NeoForge falhou: ${preInstallErr?.message || preInstallErr}`);
