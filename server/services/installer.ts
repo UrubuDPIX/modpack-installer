@@ -516,28 +516,44 @@ async function processInstallation(
         const serverJar = installerJar.replace('-installer.jar', '.jar');
         const scriptPath = path.join(serverDir, 'auto-install.sh');
         const scriptContent = `#!/bin/bash
+set -e
 SERVER_JAR="${serverJar}"
 INSTALLER_JAR="${installerJar}"
+LOG_FILE="installer.log"
 
 # Se o server jar não existe, roda o instalador
 if [ ! -f "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] Server jar not found. Running installer..."
-  java -jar "$INSTALLER_JAR" -installServer
-  if [ $? -ne 0 ]; then
-    echo "[Modpack Installer] Installer failed! Cleaning and retrying..."
-    rm -rf libraries/ forge*.log
-    java -jar "$INSTALLER_JAR" -installServer
+  echo "[Modpack Installer] Server jar not found ($SERVER_JAR). Running installer..."
+  echo "[Modpack Installer] Java version:"
+  java -version
+  echo "[Modpack Installer] Installer: $INSTALLER_JAR"
+  echo "[Modpack Installer] Running: java -jar $INSTALLER_JAR -installServer"
+  
+  if ! java -jar "$INSTALLER_JAR" -installServer 2>&1 | tee "$LOG_FILE"; then
+    echo "[Modpack Installer] Installer failed! Exit code: $?"
+    echo "[Modpack Installer] Log output:"
+    cat "$LOG_FILE" 2>/dev/null || echo "(no log file)"
+    echo "[Modpack Installer] Cleaning and retrying..."
+    rm -rf libraries/ forge*.log "$LOG_FILE"
+    if ! java -jar "$INSTALLER_JAR" -installServer 2>&1 | tee "$LOG_FILE"; then
+      echo "[Modpack Installer] Retry also failed! Exit code: $?"
+      echo "[Modpack Installer] Log output:"
+      cat "$LOG_FILE" 2>/dev/null || echo "(no log file)"
+    fi
   fi
   echo "[Modpack Installer] Installation complete."
 fi
 
 if [ ! -f "$SERVER_JAR" ]; then
   echo "[Modpack Installer] ERROR: Server jar still missing after installation!"
-  ls -la *.jar
+  echo "[Modpack Installer] JAR files in directory:"
+  ls -la *.jar 2>/dev/null || echo "(no jar files)"
+  echo "[Modpack Installer] All files:"
+  ls -la
   exit 1
 fi
 
-echo "[Modpack Installer] Starting server..."
+echo "[Modpack Installer] Starting server with: $SERVER_JAR"
 java -jar "$SERVER_JAR" nogui
 `;
         await fs.writeFile(scriptPath, scriptContent, 'utf-8');
