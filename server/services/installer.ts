@@ -893,12 +893,6 @@ async function startServer(serverId: string): Promise<void> {
 }
 
 async function detectAndConfigureStartup(serverId: string, serverDir: string, mcVersion: string, version?: any): Promise<string | null> {
-  const apiKey = await getPanelApiKey();
-  if (!apiKey) {
-    console.warn('[Startup] API Key do painel não configurada.');
-    return null;
-  }
-
   const files = await fs.readdir(serverDir);
   let startupCommand: string | null = null;
   let detectedType = 'unknown';
@@ -1075,7 +1069,13 @@ ${startupCommand}
   console.log(`[Detector] Tipo detectado: ${detectedType}`);
   console.log(`[Detector] Startup escolhido: ${startupCommand}`);
 
-  // Atualiza startup via API
+  // Atualiza startup via API (opcional - requer API key configurada)
+  const apiKey = await getPanelApiKey();
+  if (!apiKey) {
+    console.warn('[Startup] API Key não configurada. Startup não atualizado no painel, mas auto-install.sh foi criado.');
+    return startupCommand;
+  }
+
   try {
     const internalId = await getServerInternalId(serverId);
     if (!internalId) {
