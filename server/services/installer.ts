@@ -577,26 +577,29 @@ findForgeJar() {
 
 SERVER_JAR=$(findForgeJar)
 
-# Se não achou jar Forge, extrai do installer
-if [ -z "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] Extracting from installer..."
+# Verifica se libraries existem
+if [ ! -d "libraries" ] || [ ! -f "libraries/net/minecraft/launchwrapper/1.12/launchwrapper-1.12.jar" ]; then
+  echo "[Modpack Installer] Libraries missing or incomplete. Extracting from installer..."
   mkdir -p installer_extract
   cd installer_extract
   jar xf "../$INSTALLER_JAR"
   cd ..
   
   # Procura jar universal extraído
-  local extracted_universal=$(find installer_extract -name "*universal.jar" | head -1)
-  if [ -n "$extracted_universal" ]; then
-    cp "$extracted_universal" .
-    SERVER_JAR=$(basename "$extracted_universal")
-    echo "[Modpack Installer] Extracted: $SERVER_JAR"
+  if [ -z "$SERVER_JAR" ]; then
+    local extracted_universal=$(find installer_extract -name "*universal.jar" | head -1)
+    if [ -n "$extracted_universal" ]; then
+      cp "$extracted_universal" .
+      SERVER_JAR=$(basename "$extracted_universal")
+      echo "[Modpack Installer] Extracted: $SERVER_JAR"
+    fi
   fi
   
   # Copia libraries extraídas
   if [ -d "installer_extract/libraries" ]; then
-    cp -r installer_extract/libraries/* libraries/ 2>/dev/null || mkdir -p libraries && cp -r installer_extract/libraries/* libraries/
-    echo "[Modpack Installer] Libraries extracted"
+    mkdir -p libraries
+    cp -r installer_extract/libraries/* libraries/
+    echo "[Modpack Installer] Libraries extracted to libraries/"
   fi
   
   # Limpa extração
