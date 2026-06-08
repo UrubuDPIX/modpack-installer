@@ -1119,7 +1119,18 @@ if [ -n "$INSTALLER_JAR" ]; then
   SERVER_JAR=$(findForgeJar)
   if [ -z "$SERVER_JAR" ]; then
     echo "[Modpack Installer] Install.sh nao gerou o Forge jar. Rodando instalador manual..."
-    java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
+    if [ "$MC_VERSION" = "1.12.2" ]; then
+      echo "[Modpack Installer] Usando instalador atualizado do Forge (2860) para corrigir links quebrados..."
+      curl -fsSL "https://maven.minecraftforge.net/net/minecraftforge/forge/1.12.2-14.23.5.2860/forge-1.12.2-14.23.5.2860-installer.jar" -o "forge-fix-installer.jar"
+      java -jar "forge-fix-installer.jar" -installServer > "$LOG_FILE" 2>&1
+      # Renomear para a versao antiga esperada pelo LaunchServer.sh
+      OLD_VER=$(echo "$INSTALLER_JAR" | grep -oE '14\.23\.5\.[0-9]+' | head -1)
+      if [ -n "$OLD_VER" ] && [ -f "forge-1.12.2-14.23.5.2860-universal.jar" ]; then
+        cp "forge-1.12.2-14.23.5.2860-universal.jar" "forge-1.12.2-$OLD_VER-universal.jar"
+      fi
+    else
+      java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
+    fi
     SERVER_JAR=$(findForgeJar)
   fi
 fi
