@@ -714,13 +714,19 @@ async function downloadFile(url: string, dest: string, redirectCount = 0): Promi
 }
 
 async function cleanServerDirectory(serverDir: string): Promise<void> {
-  const keepFiles = ['world', 'server.properties', 'ops.json', 'whitelist.json', 'banned-players.json'];
+  // Remove TUDO exceto arquivos de preservação
+  const preserve = ['.pteroignore', 'world_backup'];
   
   const entries = await fs.readdir(serverDir);
   
   for (const entry of entries) {
-    if (!keepFiles.includes(entry)) {
-      await fs.rm(path.join(serverDir, entry), { recursive: true, force: true });
+    if (preserve.includes(entry)) continue;
+    
+    const entryPath = path.join(serverDir, entry);
+    try {
+      await fs.rm(entryPath, { recursive: true, force: true });
+    } catch (e) {
+      // Ignora erros de permissão
     }
   }
 }
@@ -1002,12 +1008,10 @@ async function startServer(serverId: string): Promise<void> {
 async function detectAndConfigureStartup(serverId: string, serverDir: string, mcVersion: string, version?: any): Promise<string | null> {
   const files = await fs.readdir(serverDir);
   let startupCommand: string | null = null;
-  let detectedType = 'unknown';
+  let detectedLoader = 'unknown';
 
-  // Detecta tipo de modpack pelo nome/arquivos
+  // --- ETAPA 1: Detecta loader a partir dos dados do modpack ---
   let modpackType = 'unknown';
-  
-  // Tenta puxar o modloader direto do objeto version fornecido pelo banco de dados / frontend
   if (version) {
     const loaderFromVer = (version.modpack?.modloader || version.loader || '').toLowerCase();
     if (loaderFromVer.includes('fabric')) modpackType = 'fabric';
@@ -1015,53 +1019,23 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
     else if (loaderFromVer.includes('forge')) modpackType = 'forge';
     else if (loaderFromVer.includes('quilt')) modpackType = 'quilt';
     else if (loaderFromVer.includes('vanilla')) modpackType = 'vanilla';
+    console.log(`[Detector] Loader from DB: ${modpackType}`);
   }
 
-  try {
-    const manifestPath = path.join(serverDir, 'manifest.json');
-    if (modpackType === 'unknown' && await fileExists(manifestPath)) {
-      const content = await fs.readFile(manifestPath, 'utf-8');
-      const manifest = JSON.parse(content);
-      const modpackName = (manifest.name || '').toLowerCase();
-      if (modpackName.includes('bettermc')) modpackType = 'fabric';
-      if (modpackName.includes('homestead')) modpackType = 'fabric';
-      if (modpackName.includes('fabric')) modpackType = 'fabric';
-      if (modpackName.includes('forge')) modpackType = 'forge';
-      if (modpackName.includes('neoforge')) modpackType = 'neoforge';
-    }
-    
-    // Detecta tipo verificando mods no diretório
-    if (modpackType === 'unknown' && await directoryExists(path.join(serverDir, 'mods'))) {
-      const modFiles = await fs.readdir(path.join(serverDir, 'mods'));
-      const hasFabricMods = modFiles.some((f: string) => f.includes('fabric') || f.includes('cloth'));
-      const hasForgeMods = modFiles.some((f: string) => f.includes('forge') || f.includes('ftb'));
-      
-      if (hasFabricMods && !hasForgeMods) modpackType = 'fabric';
-      if (hasForgeMods && !hasFabricMods) modpackType = 'forge';
-    }
-  } catch (e) {
-    // ignora
-  }
-
-  // Detector 1: startserver.sh (NeoForge/Forge Server Pack)
+  // --- ETAPA 2: Detecta loader a partir dos arquivos no disco ---
+  // NeoForge/Forge: startserver.sh
   if (files.includes('startserver.sh')) {
     console.log('[Detector] startserver.sh encontrado');
-    detectedType = 'startserver.sh';
+    detectedLoader = 'neoforge'; // ou forge, mas startserver.sh é tipicamente NeoForge
     startupCommand = 'bash startserver.sh';
   }
-  // Detector 2: Fabric server.jar (prioridade para modpacks Fabric)
-  if (!startupCommand && files.includes('server.jar') && modpackType === 'fabric') {
-    console.log('[Detector] Fabric server.jar encontrado (prioridade para modpack Fabric)');
-    detectedType = 'fabric-server';
-    startupCommand = 'java -jar server.jar nogui';
-  }
-  // Detector 3: run.sh (Forge/Fabric genérico)
+  // Forge: run.sh
   else if (files.includes('run.sh')) {
     console.log('[Detector] run.sh encontrado');
-    detectedType = 'run.sh';
+    detectedLoader = 'forge';
     startupCommand = 'bash run.sh';
   }
-  // Detector 3: NeoForge unix_args.txt
+  // NeoForge: unix_args.txt
   else {
     const neoForgePattern = /libraries\/net\/neoforged\/neoforge\/([^/]+)\/unix_args\.txt/;
     const neoForgeMatch = files.find(f => neoForgePattern.test(f));
@@ -1069,12 +1043,12 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
       const nfMatch = neoForgeMatch.match(neoForgePattern);
       if (nfMatch) {
         console.log(`[Detector] NeoForge unix_args.txt encontrado (v${nfMatch[1]})`);
-        detectedType = 'neoforge-unix_args';
+        detectedLoader = 'neoforge';
         startupCommand = `java @user_jvm_args.txt @libraries/net/neoforged/neoforge/${nfMatch[1]}/unix_args.txt nogui`;
       }
     }
   }
-  // Detector 4: Forge universal jar (Forge antigo)
+  // Forge: forge-*-universal.jar
   if (!startupCommand) {
     const mcVerSafe = mcVersion.replace(/\./g, '\\.');
     const universalPattern = new RegExp(`^forge-${mcVerSafe}-.+-universal\\.jar$`, 'i');
@@ -1083,98 +1057,163 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
       forgeUniversal = files.find((f: string) => /^forge-.+-universal\.jar$/.test(f));
     }
     if (forgeUniversal) {
-      console.log(`[Detector] Forge universal jar encontrado: ${forgeUniversal}`);
-      detectedType = 'forge-universal';
+      console.log(`[Detector] Forge universal jar: ${forgeUniversal}`);
+      detectedLoader = 'forge';
       startupCommand = `java -jar ${forgeUniversal} nogui`;
     }
   }
-  // Detector 4b: Forge jar genérico (instalador criou forge-*.jar)
+  // Forge: forge-*.jar (sem installer)
   if (!startupCommand) {
     const mcVerSafe = mcVersion.replace(/\./g, '\\.');
-    const forgeJarPattern = new RegExp(`^forge-${mcVerSafe}-.+\\.jar$`, 'i');
+    const forgeJarPattern = new RegExp(`^forge-${mcVerSafe}-.+\.jar$`, 'i');
     let forgeJar = files.find((f: string) => forgeJarPattern.test(f) && !f.includes('-installer'));
     if (!forgeJar) {
       forgeJar = files.find((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
     }
     if (forgeJar) {
-      console.log(`[Detector] Forge jar encontrado: ${forgeJar}`);
-      detectedType = 'forge-jar';
+      console.log(`[Detector] Forge jar: ${forgeJar}`);
+      detectedLoader = 'forge';
       startupCommand = `java -jar ${forgeJar} nogui`;
     }
   }
-  // Detector 4c: Minecraft server jar (Forge 1.12.2 cria minecraft_server.x.x.jar)
-  if (!startupCommand) {
-    const mcVerSafe = mcVersion.replace(/\./g, '\\.');
-    const mcServerPattern = new RegExp(`^minecraft_server\\.${mcVerSafe}\\.jar$`, 'i');
-    let mcServerJar = files.find((f: string) => mcServerPattern.test(f));
-    if (!mcServerJar) {
-      mcServerJar = files.find((f: string) => /^minecraft_server\..+\.jar$/.test(f));
-    }
-    if (mcServerJar) {
-      console.log(`[Detector] Minecraft server jar encontrado: ${mcServerJar}`);
-      detectedType = 'minecraft-server';
-      startupCommand = `java -jar ${mcServerJar} nogui`;
-    }
+  // Fabric: fabric-server-launch.jar
+  if (!startupCommand && files.includes('fabric-server-launch.jar')) {
+    console.log('[Detector] Fabric server launch encontrado');
+    detectedLoader = 'fabric';
+    startupCommand = 'java -jar fabric-server-launch.jar nogui';
   }
-  // Detector 5: Fabric server launch
-  if (!startupCommand) {
-    if (files.includes('fabric-server-launch.jar')) {
-      console.log('[Detector] Fabric server launch encontrado');
-      detectedType = 'fabric';
-      startupCommand = 'java -jar fabric-server-launch.jar nogui';
-    }
+  // Quilt: quilt-server-launch.jar
+  if (!startupCommand && files.includes('quilt-server-launch.jar')) {
+    console.log('[Detector] Quilt server launch encontrado');
+    detectedLoader = 'quilt';
+    startupCommand = 'java -jar quilt-server-launch.jar nogui';
   }
-  // Detector 6: Quilt
-  if (!startupCommand) {
-    if (files.includes('quilt-server-launch.jar')) {
-      console.log('[Detector] Quilt server launch encontrado');
-      detectedType = 'quilt';
-      startupCommand = 'java -jar quilt-server-launch.jar nogui';
-    }
+  // Vanilla: server.jar (último recurso)
+  if (!startupCommand && files.includes('server.jar')) {
+    console.log('[Detector] server.jar encontrado (fallback vanilla)');
+    detectedLoader = 'vanilla';
+    startupCommand = 'java -jar server.jar nogui';
   }
-  // Detector 7: Vanilla fallback (última opção)
-  if (!startupCommand) {
-    if (files.includes('server.jar')) {
-      console.log('[Detector] server.jar encontrado (fallback - último recurso)');
-      detectedType = 'vanilla';
-      startupCommand = 'java -jar server.jar nogui';
+
+  // --- ETAPA 3: Se não detectou loader mas tem mods/config, é "files_only" ---
+  const hasMods = await directoryExists(path.join(serverDir, 'mods'));
+  const hasConfig = await directoryExists(path.join(serverDir, 'config'));
+  if (!startupCommand && (hasMods || hasConfig)) {
+    console.log(`[Detector] Modpack sem loader detectado (files_only). Mods: ${hasMods}, Config: ${hasConfig}`);
+    // Usa o loader do banco de dados, ou tenta inferir
+    if (modpackType !== 'unknown') {
+      detectedLoader = modpackType;
+    } else {
+      // Tenta inferir olhando os mods
+      try {
+        const modFiles = await fs.readdir(path.join(serverDir, 'mods'));
+        const hasFabric = modFiles.some((f: string) => f.includes('fabric') || f.includes('cloth-config'));
+        const hasForge = modFiles.some((f: string) => f.includes('forge') || f.includes('ftb'));
+        detectedLoader = hasFabric && !hasForge ? 'fabric' : 'forge';
+      } catch (e) {
+        detectedLoader = 'forge'; // fallback mais comum
+      }
+    }
+    console.log(`[Detector] Loader inferido para instalação automática: ${detectedLoader}`);
+    
+    // Instala o loader automaticamente
+    try {
+      if (detectedLoader === 'fabric') {
+        await installFabricLoader(serverDir, mcVersion);
+        if (files.includes('fabric-server-launch.jar') || await fileExists(path.join(serverDir, 'fabric-server-launch.jar'))) {
+          startupCommand = 'java -jar fabric-server-launch.jar nogui';
+        }
+      } else if (detectedLoader === 'forge') {
+        await installForgeFromManifest(serverDir, mcVersion, version);
+        // Re-escaneia para achar o jar criado
+        const updatedFiles = await fs.readdir(serverDir);
+        const forgeJar = updatedFiles.find((f: string) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+        if (forgeJar) {
+          startupCommand = `java -jar ${forgeJar} nogui`;
+        }
+      } else if (detectedLoader === 'neoforge') {
+        await installNeoForgeFromManifest(serverDir, mcVersion, version);
+        if (files.includes('startserver.sh') || await fileExists(path.join(serverDir, 'startserver.sh'))) {
+          startupCommand = 'bash startserver.sh';
+        }
+      }
+    } catch (e: any) {
+      console.error(`[Detector] Falha ao instalar loader automaticamente: ${e?.message || e}`);
     }
   }
 
+  // --- ETAPA 4: Se ainda não tem startup, falha com erro claro ---
   if (!startupCommand) {
-    console.warn('[Detector] Nenhum startup detectado!');
+    console.error('[Detector] ERROR: Não foi possível detectar o loader.');
+    console.error('[Detector] Arquivos encontrados: ' + files.join(', '));
     return null;
   }
 
-  // Se for Forge ou NeoForge, e houver um installer correspondente, cria um script wrapper
-  // que verifica libraries e roda o instalador automaticamente na primeira inicialização.
-  const installerJar = files.find((f: string) => (f.startsWith('forge-') || f.startsWith('neoforge-')) && f.endsWith('-installer.jar'));
-  if (installerJar && (detectedType.startsWith('forge') || detectedType.startsWith('neoforge') || startupCommand.startsWith('java'))) {
-    console.log(`[Detector] Criando script wrapper auto-install.sh usando ${installerJar}`);
-    const wrapperScript = `#!/bin/bash
-# Auto-generated by Modpack Installer
-# Runs installer if libraries are missing, then starts the server
+  console.log(`[Detector] Loader: ${detectedLoader}`);
+  console.log(`[Detector] MC: ${mcVersion}`);
+  console.log(`[Detector] Startup: ${startupCommand}`);
 
-if [ ! -d libraries ] || [ ! "$(ls -A libraries 2>/dev/null)" ]; then
-  echo "[Modpack Installer] Libraries not found. Running installer..."
-  java -jar ${installerJar} -installServer
-  if [ $? -ne 0 ]; then
-    echo "[Modpack Installer] Installer failed!"
-    exit 1
+  // --- ETAPA 5: Cria auto-install.sh para Forge/NeoForge com installer ---
+  const installerJar = files.find((f: string) => (f.startsWith('forge-') || f.startsWith('neoforge-')) && f.endsWith('-installer.jar'));
+  if (installerJar && (detectedLoader === 'forge' || detectedLoader === 'neoforge')) {
+    console.log(`[Detector] Criando auto-install.sh com ${installerJar}`);
+    const wrapperScript = `#!/bin/bash
+INSTALLER_JAR="${installerJar}"
+EXPECTED_JAR="${installerJar.replace('-installer.jar', '.jar')}"
+LOG_FILE="installer.log"
+
+findForgeJar() {
+  [ -f "$EXPECTED_JAR" ] && { echo "$EXPECTED_JAR"; return; }
+  local universal=$(ls -1 forge-*-universal.jar 2>/dev/null | head -1)
+  [ -n "$universal" ] && { echo "$universal"; return; }
+  local forgejar=$(ls -1 forge-*.jar 2>/dev/null | grep -v installer | head -1)
+  [ -n "$forgejar" ] && { echo "$forgejar"; return; }
+  echo ""
+}
+
+SERVER_JAR=$(findForgeJar)
+
+if [ -z "$SERVER_JAR" ]; then
+  echo "[Modpack Installer] No Forge jar. Running installer..."
+  MC_VERSION=$(echo "$INSTALLER_JAR" | cut -d'-' -f2)
+  SERVER_JAR_NAME="minecraft_server.$MC_VERSION.jar"
+  if [ -n "$MC_VERSION" ] && [ ! -f "$SERVER_JAR_NAME" ]; then
+    echo "[Modpack Installer] Downloading $SERVER_JAR_NAME..."
+    if [ "$MC_VERSION" = "1.12.2" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar" -o "$SERVER_JAR_NAME"
+    elif [ "$MC_VERSION" = "1.16.5" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/1b557e7b033b583cd9f66746b7a9ab1ec1673ced/server.jar" -o "$SERVER_JAR_NAME"
+    elif [ "$MC_VERSION" = "1.18.2" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/c8f54c584d3e5b69c7a6f44336ed7c2b41d62b01/server.jar" -o "$SERVER_JAR_NAME"
+    elif [ "$MC_VERSION" = "1.19.2" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/f69c284232d7c7580bd89d5f5e0b2a24c6c71a71/server.jar" -o "$SERVER_JAR_NAME"
+    elif [ "$MC_VERSION" = "1.20.1" ]; then
+      curl -fsSL "https://piston-data.mojang.com/v1/objects/84194a0f4159e8ed1e21d5f3d9d6e6e6e6e6e6e6/server.jar" -o "$SERVER_JAR_NAME"
+    fi
   fi
-  echo "[Modpack Installer] Libraries installed successfully."
+  rm -rf libraries/ forge*.log "$LOG_FILE"
+  java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
+  if [ $? -ne 0 ]; then
+    echo "[Modpack Installer] Installer failed. Retrying..."
+    rm -rf libraries/ forge*.log "$LOG_FILE"
+    java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
+  fi
+  SERVER_JAR=$(findForgeJar)
 fi
 
-echo "[Modpack Installer] Starting server..."
-${startupCommand}
+if [ -z "$SERVER_JAR" ]; then
+  echo "[Modpack Installer] ERROR: No Forge server jar found!"
+  ls -1 *.jar 2>/dev/null || echo "(no jars)"
+  exit 1
+fi
+
+echo "[Modpack Installer] Starting: $SERVER_JAR"
+java -jar "$SERVER_JAR" nogui
 `;
     await fs.writeFile(path.join(serverDir, 'auto-install.sh'), wrapperScript, 'utf-8');
     await execAsync(`chmod +x ${path.join(serverDir, 'auto-install.sh')}`);
     startupCommand = 'bash auto-install.sh';
   }
-
-  console.log(`[Detector] Tipo detectado: ${detectedType}`);
-  console.log(`[Detector] Startup escolhido: ${startupCommand}`);
 
   // Atualiza startup via API (opcional - requer API key configurada)
   const apiKey = await getPanelApiKey();
@@ -1487,6 +1526,68 @@ async function installNeoForge(serverDir: string, mcVersion: string, log: string
   await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${neoForgeInstaller} -installServer`, log);
   
   log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
+}
+
+async function installFabricLoader(serverDir: string, mcVersion: string): Promise<void> {
+  console.log(`[AutoInstall] Installing Fabric for MC ${mcVersion}...`);
+  const installerUrl = 'https://meta.fabricmc.net/v2/versions/installer';
+  const installerRes = await fetch(installerUrl);
+  const installerVersions = await installerRes.json() as any[];
+  const latestInstaller = installerVersions[0]?.url || 'https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.0/fabric-installer-1.0.0.jar';
+  
+  const installerPath = path.join(serverDir, 'fabric-installer.jar');
+  await downloadFile(latestInstaller, installerPath);
+  
+  await execAsync(`cd ${serverDir} && java -jar fabric-installer.jar server -mcversion ${mcVersion} -downloadMinecraft`);
+  console.log(`[AutoInstall] Fabric installed for MC ${mcVersion}`);
+}
+
+async function installForgeFromManifest(serverDir: string, mcVersion: string, version: any): Promise<void> {
+  console.log(`[AutoInstall] Installing Forge for MC ${mcVersion}...`);
+  const log: string[] = [];
+  
+  // Tenta usar versão do manifest
+  let forgeVersion = version?.loaderVersion;
+  if (!forgeVersion) {
+    // Mapa de fallback para versões comuns
+    const forgeVersions: Record<string, string> = {
+      '1.12.2': '14.23.5.2860',
+      '1.16.5': '36.2.39',
+      '1.18.2': '40.2.0',
+      '1.19.2': '43.2.0',
+      '1.20.1': '47.1.3'
+    };
+    forgeVersion = forgeVersions[mcVersion];
+  }
+  
+  if (forgeVersion) {
+    await installForge(serverDir, mcVersion, log, forgeVersion);
+    console.log(`[AutoInstall] Forge ${forgeVersion} installed for MC ${mcVersion}`);
+  } else {
+    throw new Error(`Unknown Forge version for MC ${mcVersion}`);
+  }
+}
+
+async function installNeoForgeFromManifest(serverDir: string, mcVersion: string, version: any): Promise<void> {
+  console.log(`[AutoInstall] Installing NeoForge for MC ${mcVersion}...`);
+  const log: string[] = [];
+  
+  let neoForgeVersion = version?.loaderVersion;
+  if (!neoForgeVersion) {
+    const neoForgeVersions: Record<string, string> = {
+      '1.20.1': '20.2.59',
+      '1.20.4': '20.4.237',
+      '1.21.1': '21.1.143'
+    };
+    neoForgeVersion = neoForgeVersions[mcVersion];
+  }
+  
+  if (neoForgeVersion) {
+    await installNeoForge(serverDir, mcVersion, log, neoForgeVersion);
+    console.log(`[AutoInstall] NeoForge ${neoForgeVersion} installed for MC ${mcVersion}`);
+  } else {
+    throw new Error(`Unknown NeoForge version for MC ${mcVersion}`);
+  }
 }
 
 async function cleanServerDir(serverDir: string): Promise<void> {
