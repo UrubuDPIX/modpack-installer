@@ -1360,7 +1360,11 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
   
   if (specificForgeVersion) {
     // Usa versão específica detectada do manifest
-    forgeVersion = specificForgeVersion;
+    let extracted = specificForgeVersion;
+    if (!extracted.startsWith(mcVersion)) {
+      extracted = `${mcVersion}-${extracted}`;
+    }
+    forgeVersion = extracted;
     log.push(`[${new Date().toISOString()}] Usando Forge ${forgeVersion} (passado como parametro)`);
   } else {
     // Tenta detectar do manifest.json primeiro
@@ -1562,48 +1566,21 @@ async function installForgeFromManifest(serverDir: string, mcVersion: string, ve
   console.log(`[AutoInstall] Installing Forge for MC ${mcVersion}...`);
   const log: string[] = [];
   
-  // Tenta usar versão do manifest
-  let forgeVersion = version?.loaderVersion;
-  if (!forgeVersion) {
-    // Mapa de fallback para versões comuns
-    const forgeVersions: Record<string, string> = {
-      '1.12.2': '14.23.5.2860',
-      '1.16.5': '36.2.39',
-      '1.18.2': '40.2.0',
-      '1.19.2': '43.2.0',
-      '1.20.1': '47.1.3'
-    };
-    forgeVersion = forgeVersions[mcVersion];
-  }
+  // Tenta usar versão do banco de dados, senão undefined para que o installForge leia o manifest.json
+  const forgeVersion = version?.loaderVersion;
+  await installForge(serverDir, mcVersion, log, forgeVersion);
   
-  if (forgeVersion) {
-    await installForge(serverDir, mcVersion, log, forgeVersion);
-    console.log(`[AutoInstall] Forge ${forgeVersion} installed for MC ${mcVersion}`);
-  } else {
-    throw new Error(`Unknown Forge version for MC ${mcVersion}`);
-  }
+  console.log(`[AutoInstall] Forge installation process finished for MC ${mcVersion}`);
 }
 
 async function installNeoForgeFromManifest(serverDir: string, mcVersion: string, version: any): Promise<void> {
   console.log(`[AutoInstall] Installing NeoForge for MC ${mcVersion}...`);
   const log: string[] = [];
   
-  let neoForgeVersion = version?.loaderVersion;
-  if (!neoForgeVersion) {
-    const neoForgeVersions: Record<string, string> = {
-      '1.20.1': '20.2.59',
-      '1.20.4': '20.4.237',
-      '1.21.1': '21.1.143'
-    };
-    neoForgeVersion = neoForgeVersions[mcVersion];
-  }
+  const neoForgeVersion = version?.loaderVersion;
+  await installNeoForge(serverDir, mcVersion, log, neoForgeVersion);
   
-  if (neoForgeVersion) {
-    await installNeoForge(serverDir, mcVersion, log, neoForgeVersion);
-    console.log(`[AutoInstall] NeoForge ${neoForgeVersion} installed for MC ${mcVersion}`);
-  } else {
-    throw new Error(`Unknown NeoForge version for MC ${mcVersion}`);
-  }
+  console.log(`[AutoInstall] NeoForge installation process finished for MC ${mcVersion}`);
 }
 
 async function cleanServerDir(serverDir: string): Promise<void> {
