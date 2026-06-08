@@ -342,10 +342,12 @@ async function processInstallation(
           const cfKey = await getCurseForgeKey();
           
           let cfLoaderType = 0;
-          if (version.loader === 'Forge' || detected.loader === 'Forge') cfLoaderType = 1;
-          else if (version.loader === 'Fabric' || detected.loader === 'Fabric') cfLoaderType = 4;
-          else if (version.loader === 'Quilt' || detected.loader === 'Quilt') cfLoaderType = 5;
-          else if (version.loader === 'NeoForge' || detected.loader === 'NeoForge') cfLoaderType = 6;
+          const detLoader = String(detected.loader);
+          const verLoader = String(version.loader);
+          if (verLoader === 'Forge' || detLoader === 'Forge') cfLoaderType = 1;
+          else if (verLoader === 'Fabric' || detLoader === 'Fabric') cfLoaderType = 4;
+          else if (verLoader === 'Quilt' || detLoader === 'Quilt') cfLoaderType = 5;
+          else if (verLoader === 'NeoForge' || detLoader === 'NeoForge') cfLoaderType = 6;
           
           const mcVer = version.minecraftVersion || detected.minecraftVersion || '';
 
