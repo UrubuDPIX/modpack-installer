@@ -497,13 +497,7 @@ async function processInstallation(
       log.push(`[${new Date().toISOString()}] AVISO: Falha ao escrever eula.txt: ${e?.message || e}`);
     }
     
-    // Restaura mundo se existir backup
-    if (await directoryExists(worldBackup)) {
-      log.push(`[${new Date().toISOString()}] Restaurando mundo...`);
-      await execAsync(`rm -rf ${worldDir} && mv ${worldBackup} ${worldDir}`).catch((e: any) => {
-        log.push(`[${new Date().toISOString()}] AVISO: Falha ao restaurar mundo: ${e?.message || e}`);
-      });
-    }
+
     
     log.push(`[${new Date().toISOString()}] Instalação concluída com sucesso!`);
     await saveModpackMetadata(serverDir, version.modpack?.source || 'unknown', version.modpack, version);
