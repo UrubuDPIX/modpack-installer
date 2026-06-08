@@ -32,14 +32,96 @@ async function saveModpackMetadata(serverDir: string, provider: string, modpack:
   }
 }
 
-// Categorias do CurseForge que indicam mods client-side (não devem ir pro servidor)
-const CF_CLIENT_SIDE_CATEGORIES = [
-  422, // Mapas e Minimaps (JourneyMap, Xaero's)
-  421, // Customização de Chat
-  424, // UI e HUD
-  4642, // Otimizações Gráficas (Sodium, Iris)
-  4555, // Shaders
-  4455, // Resource Packs
+// Lista manual de mods client-side (nomes de arquivos que devem ser ignorados/deletados)
+// Você pode adicionar mais itens aqui conforme necessário para bloquear mods visuais no servidor.
+// Esta lista substitui a checagem por categorias do CurseForge.
+const CLIENT_SIDE_MODS = [
+  'colorwheel_patcher',
+  'colorwheel',
+  'replaymod',
+  'iris',
+  'sodium',
+  'zoom',
+  'journeymap',
+  'xaero',
+  'optifine',
+  'optifabric',
+  'appleskin',
+  'litematica',
+  'minihud',
+  'tweakeroo',
+  'itemscroller',
+  'wdl',
+  'worlddownloader',
+  'nvidium',
+  'moreculling',
+  'entityculling',
+  'betterfps',
+  'foamfix',
+  'texfix',
+  'vanillaenhancements',
+  'rubidium',
+  'oculus',
+  'dashloader',
+  'fancymenu',
+  'drippyloadingscreen',
+  'custommainmenu',
+  'defaultoptions',
+  'controlling',
+  'mouseweelie',
+  'dynamiclights',
+  'shulkerboxtooltip',
+  'notenoughanimations',
+  'firstperson',
+  '3dskinlayers',
+  'voxelmap',
+  'antiqueatlas',
+  'craftpresence',
+  'discordrpc',
+  'lambdynlights',
+  'okzoomer',
+  'roughlyenoughitems',
+  'emi',
+  'modmenu',
+  'neat',
+  'torohealth',
+  'damageindicators',
+  'armorhud',
+  'durabilityviewer',
+  'inventoryhud',
+  'itemphysic',
+  'soundfilters',
+  'soundphysics',
+  'dynamic surroundings',
+  'ambientsounds',
+  'biomeinfo',
+  'FPS-Monitor',
+  'debugify',
+  'authme',
+  'reauth',
+  'tlauncher',
+  'tl_skin',
+  'waveycapes',
+  'capes',
+  'cosmetic',
+  'skin',
+  '3dskin',
+  'citresewn',
+  'continuity',
+  'enhancedblockentities',
+  'entitytexturefeatures',
+  'fallingleaves',
+  'visuality',
+  'clear-skies',
+  'custom-splash-screen',
+  'melody',
+  'loadmyresources',
+  'respackopts',
+  'rrls',
+  'remove-reloading-screen',
+  'smoke-suppression',
+  'smooth-boot',
+  'sparkweave'
 ];
 
 interface InstallResult {
@@ -394,27 +476,6 @@ async function processInstallation(
 
               if (cfKey) {
                 try {
-                  // Busca dados do MOD para verificar se é client-side (categorias)
-                  log.push(`[${new Date().toISOString()}] [CurseForge] Verificando mod ${modInfo.projectID}...`);
-                  const modMetaRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}`, {
-                    headers: { 'x-api-key': cfKey }
-                  });
-                  
-                  if (modMetaRes.ok) {
-                    const modMeta = await modMetaRes.json() as any;
-                    const modDetails = modMeta.data;
-                    
-                    // Verifica se o mod pertence a categorias client-side
-                    const isClientSide = modDetails.categories?.length > 0 && modDetails.categories.every((cat: any) => 
-                      CF_CLIENT_SIDE_CATEGORIES.includes(cat.id)
-                    );
-                    
-                    if (isClientSide) {
-                      log.push(`[${new Date().toISOString()}] [CurseForge] IGNORADO (Client-Side): ${modDetails.name}`);
-                      continue; // Pula o download deste mod
-                    }
-                  }
-                  
                   // Busca dados do ARQUIVO para obter nome correto, URL e DEPENDÊNCIAS
                   log.push(`[${new Date().toISOString()}] [CurseForge] Buscando arquivo ${modInfo.projectID}/${currentFileId}...`);
                   const fileDataRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${currentFileId}`, {
@@ -1702,86 +1763,8 @@ function getTruncatedLog(logArray: string[]): string {
 }
 
 async function removeClientSideMods(modsDir: string, log: string[]): Promise<void> {
-  // Lista de padrões de nomes de mods client-side comuns
-  const clientSidePatterns = [
-    'colorwheel_patcher',
-    'colorwheel',
-    'replaymod',
-    'iris',
-    'sodium',
-    'zoom',
-    'journeymap',
-    'xaero',
-    'optifine',
-    'optifabric',
-    'appleskin',
-    'litematica',
-    'minihud',
-    'tweakeroo',
-    'itemscroller',
-    'wdl',
-    'worlddownloader',
-    'nvidium',
-    'moreculling',
-    'entityculling',
-    'betterfps',
-    'foamfix',
-    'texfix',
-    'vanillaenhancements',
-    'voxelmap',
-    'antiqueatlas',
-    'craftpresence',
-    'discordrpc',
-    'lambdynlights',
-    'okzoomer',
-    'roughlyenoughitems',
-    'emi',
-    // NOTA: JEI é removido daqui! Ele tem funcionalidades server-side e é dependência obrigatória
-    // de mods como JustEnoughResources, JustEnoughProfessions, etc.
-    'controlling',
-    'modmenu',
-    'shulkerboxtooltip',
-    'neat',
-    'torohealth',
-    'damageindicators',
-    'armorhud',
-    'durabilityviewer',
-    'inventoryhud',
-    'itemphysic',
-    'soundfilters',
-    'soundphysics',
-    'dynamic surroundings',
-    'ambientsounds',
-    'biomeinfo',
-    'FPS-Monitor',
-    'debugify',
-    'authme',
-    'reauth',
-    'tlauncher',
-    'tl_skin',
-    'waveycapes',
-    'capes',
-    'cosmetic',
-    'skin',
-    '3dskin',
-    'citresewn',
-    'continuity',
-    'enhancedblockentities',
-    'entitytexturefeatures',
-    'fallingleaves',
-    'visuality',
-    'clear-skies',
-    'custom-splash-screen',
-    'fancymenu',
-    'melody',
-    'loadmyresources',
-    'respackopts',
-    'rrls',
-    'remove-reloading-screen',
-    'smoke-suppression',
-    'smooth-boot',
-    'sparkweave',
-  ];
+  // A lista manual está definida na constante CLIENT_SIDE_MODS no topo do arquivo.
+  const clientSidePatterns = CLIENT_SIDE_MODS;
   
   try {
     if (!await directoryExists(modsDir)) {
