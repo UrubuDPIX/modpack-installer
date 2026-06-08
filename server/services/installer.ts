@@ -1096,10 +1096,11 @@ if [ -n "$INSTALLER_JAR" ]; then
   if [ "$MC_VERSION" = "1.12.2" ] && [ ! -f "$SERVER_JAR_NAME" ]; then
     echo "[Modpack Installer] Pre-downloading vanilla server.jar for 1.12.2..."
     curl -fsSL "https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar" -o "$SERVER_JAR_NAME"
+    cp "$SERVER_JAR_NAME" "server.jar"
   fi
 fi
 
-if [ -f "Install.sh" ] && [ ! -f "libraries" ] && [ ! -d "libraries" ]; then
+if [ -f "Install.sh" ] && [ ! -d "libraries" ]; then
   echo "[Modpack Installer] Rodando Install.sh do modpack..."
   bash Install.sh
 fi
@@ -1116,8 +1117,8 @@ if [ -n "$INSTALLER_JAR" ]; then
   }
 
   SERVER_JAR=$(findForgeJar)
-  if [ -z "$SERVER_JAR" ] && [ ! -f "Install.sh" ]; then
-    echo "[Modpack Installer] No Forge jar. Running installer..."
+  if [ -z "$SERVER_JAR" ]; then
+    echo "[Modpack Installer] Install.sh nao gerou o Forge jar. Rodando instalador manual..."
     java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
     SERVER_JAR=$(findForgeJar)
   fi
