@@ -102,11 +102,11 @@ async function processInstallation(
     }
   }, 5000);
   
+  // Diretório do servidor (exemplo - ajustar conforme estrutura Jexactyl)
+  const serverDir = `/var/lib/pterodactyl/volumes/${serverId}`;
+  
   try {
     log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.version}`);
-    
-    // Diretório do servidor (exemplo - ajustar conforme estrutura Jexactyl)
-    const serverDir = `/var/lib/pterodactyl/volumes/${serverId}`;
     
     // Cria diretório se não existir
     await fs.mkdir(serverDir, { recursive: true });
@@ -508,6 +508,13 @@ async function processInstallation(
     }
   } finally {
     clearInterval(flushInterval);
+    // Garante que auto-install.sh seja criado mesmo se a instalação falhar em etapas anteriores
+    try {
+      const mcVersion = await detectMinecraftVersion(serverDir, version);
+      await detectAndConfigureStartup(serverId, serverDir, mcVersion, version);
+    } catch (e: any) {
+      console.warn(`[Installer] Falha ao criar auto-install.sh no finally: ${e?.message || e}`);
+    }
   }
 }
 
