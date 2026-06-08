@@ -121,6 +121,12 @@ export default function ModpacksContainer() {
   const [progressModpackTitle, setProgressModpackTitle] = useState('');
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
 
+  // Update Modal states
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateVersions, setUpdateVersions] = useState<any[]>([]);
+  const [updateVersionId, setUpdateVersionId] = useState("");
+  const [fetchingVersions, setFetchingVersions] = useState(false);
+
   // Use ref to always have current provider in async callbacks
   const providerRef = useRef(provider);
   providerRef.current = provider;
@@ -477,6 +483,61 @@ export default function ModpacksContainer() {
     return `${months} meses atrás`;
   };
 
+  const openUpdateModal = async () => {
+    setShowUpdateModal(true);
+    setFetchingVersions(true);
+    try {
+      if (installedModpack.provider === 'modrinth') {
+        const res = await fetch(`https://api.modrinth.com/v2/project/${installedModpack.id}/version`);
+        const data = await res.json();
+        setUpdateVersions(data.map((v: any) => ({
+          id: v.id,
+          name: v.name || v.version_number,
+          game_versions: v.game_versions
+        })));
+      } else {
+        const res = await fetch(`https://api.curseforge.com/v1/mods/${installedModpack.id}/files?pageSize=50`, {
+          headers: { "x-api-key": curseforgeKey }
+        });
+        const data = await res.json();
+        setUpdateVersions(data.data.map((f: any) => ({
+          id: String(f.id),
+          name: f.displayName || f.fileName,
+          game_versions: f.gameVersions
+        })));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setFetchingVersions(false);
+  };
+
+  const handleUpdate = async () => {
+    if (!id || !updateVersionId || !installedModpack) return;
+    setInstallingVersion(updateVersionId);
+    setShowUpdateModal(false);
+    setShowProgressModal(true);
+    setProgressModpackTitle(installedModpack.name);
+    try {
+      const response = await fetch(`/api/client/servers/${id}/modpack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modpack_slug: installedModpack.id, // Curseforge ID ou Modrinth slug
+          version_id: updateVersionId,
+          provider: installedModpack.provider,
+          delete_files: false, // Update mode!
+          accept_eula: true,
+        }),
+      });
+      if (!response.ok) {
+        console.error('Erro ao iniciar atualização:', await response.text());
+      }
+    } catch (err) {
+      console.error('Erro na requisição:', err);
+    }
+  };
+
   return (
     <>
     <div className="p-6" style={{ maxWidth: 1200, margin: "0 auto" }}>
@@ -554,10 +615,7 @@ export default function ModpacksContainer() {
                 <FontAwesomeIcon icon={faExternalLinkAlt} />
               </a>
               <button
-                onClick={() => {
-                  setSearchQuery(installedModpack.name);
-                  fetchModpacks();
-                }}
+                onClick={openUpdateModal}
                 style={{
                   background: '#818CF8',
                   borderRadius: '8px',
@@ -674,17 +732,7 @@ export default function ModpacksContainer() {
         </div>
       )}
 
-      {installedModpack && (
-        <div className="bg-green-900/30 border border-green-700 p-3 rounded mb-4">
-          <h2 className="text-sm font-semibold mb-1 flex items-center text-green-300">
-            <FontAwesomeIcon icon={faCheck} className="mr-2" />
-            Modpack Instalado: {installedModpack.modpack?.name}
-          </h2>
-          <p className="text-gray-300 text-xs">
-            Versão: {installedModpack.version?.version} | Status: {installedModpack.server_modpack?.status}
-          </p>
-        </div>
-      )}
+
 
       {/* Filters */}
       <form onSubmit={handleSearch} className="mb-6">
@@ -918,6 +966,65 @@ export default function ModpacksContainer() {
       onClose={() => setShowProgressModal(false)}
       serverId={id || ''}
     />
+
+    {/* Update Modal */}
+    {showUpdateModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+          <div className="p-6 border-b border-gray-700">
+            <h2 className="text-xl font-bold text-white">Atualizar Modpack</h2>
+            <p className="text-sm text-gray-400 mt-1">
+              Escolha a versão para atualizar. Seu mundo, logs e dados de jogadores serão mantidos.
+            </p>
+          </div>
+          
+          <div className="p-6">
+            {fetchingVersions ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+              </div>
+            ) : (
+              <select
+                value={updateVersionId}
+                onChange={(e) => setUpdateVersionId(e.target.value)}
+                className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500"
+              >
+                <option value="" disabled>Selecione uma versão...</option>
+                {updateVersions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name} {v.game_versions && `(MC ${v.game_versions.slice(0,2).join(', ')})`}
+                  </option>
+                ))}
+              </select>
+            )}
+            
+            <div className="mt-6 bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-4 flex gap-3">
+              <FontAwesomeIcon icon={faInfoCircle} className="text-indigo-400 mt-0.5" />
+              <p className="text-sm text-indigo-200">
+                A atualização não irá deletar a pasta <code className="text-indigo-300">world</code>, <code className="text-indigo-300">logs</code> ou arquivos de jogadores.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-700 bg-gray-800/50">
+            <button
+              onClick={() => setShowUpdateModal(false)}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleUpdate}
+              disabled={!updateVersionId}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-5 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+            >
+              <FontAwesomeIcon icon={faDownload} className="text-xs" />
+              Atualizar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }
