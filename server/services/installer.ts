@@ -975,17 +975,6 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
     detectedLoader = 'forge';
     startupCommand = 'bash run.sh';
   }
-  // Modpacks (como Stoneblock): LaunchServer.sh ou ServerStart.sh
-  else if (files.includes('LaunchServer.sh')) {
-    console.log('[Detector] LaunchServer.sh encontrado');
-    detectedLoader = 'forge';
-    startupCommand = 'bash LaunchServer.sh';
-  }
-  else if (files.includes('ServerStart.sh')) {
-    console.log('[Detector] ServerStart.sh encontrado');
-    detectedLoader = 'forge';
-    startupCommand = 'bash ServerStart.sh';
-  }
   // NeoForge: unix_args.txt
   else {
     const neoForgePattern = /libraries\/net\/neoforged\/neoforge\/([^/]+)\/unix_args\.txt/;
@@ -1093,76 +1082,74 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
     }
   }
 
-  // --- ETAPA 4: Se ainda não tem startup, falha com erro claro ---
-  if (!startupCommand) {
-    console.error('[Detector] ERROR: Não foi possível detectar o loader.');
-    console.error('[Detector] Arquivos encontrados: ' + files.join(', '));
-    return null;
-  }
-
-  console.log(`[Detector] Loader: ${detectedLoader}`);
-  console.log(`[Detector] MC: ${mcVersion}`);
-  console.log(`[Detector] Startup: ${startupCommand}`);
-
-  // --- ETAPA 5: Se ainda não tem jar, cria auto-install.sh como fallback ---
-  if (!startupCommand && installerJar && (detectedLoader === 'forge' || detectedLoader === 'neoforge')) {
-    console.log(`[Detector] Criando auto-install.sh com ${installerJar}`);
+  // --- ETAPA 4: Cria auto-install.sh como wrapper se necessário ---
+  if (installerJar || files.includes('LaunchServer.sh') || files.includes('ServerStart.sh') || files.includes('Install.sh')) {
+    console.log(`[Detector] Criando auto-install.sh para o modpack...`);
     const wrapperScript = `#!/bin/bash
-INSTALLER_JAR="${installerJar}"
-EXPECTED_JAR="${installerJar.replace('-installer.jar', '.jar')}"
+INSTALLER_JAR="${installerJar || ''}"
 LOG_FILE="installer.log"
 
-findForgeJar() {
-  [ -f "$EXPECTED_JAR" ] && { echo "$EXPECTED_JAR"; return; }
-  local universal=$(ls -1 forge-*-universal.jar 2>/dev/null | head -1)
-  [ -n "$universal" ] && { echo "$universal"; return; }
-  local forgejar=$(ls -1 forge-*.jar 2>/dev/null | grep -v installer | head -1)
-  [ -n "$forgejar" ] && { echo "$forgejar"; return; }
-  echo ""
-}
+if [ -f "Install.sh" ] && [ ! -f "libraries" ]; then
+  echo "[Modpack Installer] Rodando Install.sh do modpack..."
+  bash Install.sh
+fi
 
-SERVER_JAR=$(findForgeJar)
+if [ -n "$INSTALLER_JAR" ]; then
+  EXPECTED_JAR="\${INSTALLER_JAR/-installer.jar/.jar}"
+  findForgeJar() {
+    [ -f "$EXPECTED_JAR" ] && { echo "$EXPECTED_JAR"; return; }
+    local universal=$(ls -1 forge-*-universal.jar 2>/dev/null | head -1)
+    [ -n "$universal" ] && { echo "$universal"; return; }
+    local forgejar=$(ls -1 forge-*.jar 2>/dev/null | grep -v installer | head -1)
+    [ -n "$forgejar" ] && { echo "$forgejar"; return; }
+    echo ""
+  }
 
-if [ -z "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] No Forge jar. Running installer..."
-  MC_VERSION=$(echo "$INSTALLER_JAR" | cut -d'-' -f2)
-  SERVER_JAR_NAME="minecraft_server.$MC_VERSION.jar"
-  if [ -n "$MC_VERSION" ] && [ ! -f "$SERVER_JAR_NAME" ]; then
-    echo "[Modpack Installer] Downloading $SERVER_JAR_NAME..."
-    if [ "$MC_VERSION" = "1.12.2" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar" -o "$SERVER_JAR_NAME"
-    elif [ "$MC_VERSION" = "1.16.5" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/1b557e7b033b583cd9f66746b7a9ab1ec1673ced/server.jar" -o "$SERVER_JAR_NAME"
-    elif [ "$MC_VERSION" = "1.18.2" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/c8f54c584d3e5b69c7a6f44336ed7c2b41d62b01/server.jar" -o "$SERVER_JAR_NAME"
-    elif [ "$MC_VERSION" = "1.19.2" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/f69c284232d7c7580bd89d5f5e0b2a24c6c71a71/server.jar" -o "$SERVER_JAR_NAME"
-    elif [ "$MC_VERSION" = "1.20.1" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/84194a0f4159e8ed1e21d5f3d9d6e6e6e6e6e6e6/server.jar" -o "$SERVER_JAR_NAME"
-    fi
-  fi
-  rm -rf libraries/ forge*.log "$LOG_FILE"
-  java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
-  if [ $? -ne 0 ]; then
-    echo "[Modpack Installer] Installer failed. Retrying..."
-    rm -rf libraries/ forge*.log "$LOG_FILE"
-    java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
-  fi
   SERVER_JAR=$(findForgeJar)
+  if [ -z "$SERVER_JAR" ] && [ ! -f "Install.sh" ]; then
+    echo "[Modpack Installer] No Forge jar. Running installer..."
+    MC_VERSION=$(echo "$INSTALLER_JAR" | cut -d'-' -f2)
+    SERVER_JAR_NAME="minecraft_server.$MC_VERSION.jar"
+    if [ -n "$MC_VERSION" ] && [ ! -f "$SERVER_JAR_NAME" ]; then
+      if [ "$MC_VERSION" = "1.12.2" ]; then
+        curl -fsSL "https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar" -o "$SERVER_JAR_NAME"
+      fi
+    fi
+    java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
+    SERVER_JAR=$(findForgeJar)
+  fi
 fi
 
-if [ -z "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] ERROR: No Forge server jar found!"
-  ls -1 *.jar 2>/dev/null || echo "(no jars)"
-  exit 1
+if [ -f "LaunchServer.sh" ]; then
+  echo "[Modpack Installer] Starting via LaunchServer.sh..."
+  bash LaunchServer.sh
+elif [ -f "ServerStart.sh" ]; then
+  echo "[Modpack Installer] Starting via ServerStart.sh..."
+  bash ServerStart.sh
+elif [ -f "startserver.sh" ]; then
+  echo "[Modpack Installer] Starting via startserver.sh..."
+  bash startserver.sh
+else
+  SERVER_JAR=$(findForgeJar)
+  if [ -n "$SERVER_JAR" ]; then
+    echo "[Modpack Installer] Starting: $SERVER_JAR"
+    java -jar "$SERVER_JAR" nogui
+  else
+    echo "[Modpack Installer] Nao encontrou script nem jar."
+    exit 1
+  fi
 fi
-
-echo "[Modpack Installer] Starting: $SERVER_JAR"
-java -jar "$SERVER_JAR" nogui
 `;
     await fs.writeFile(path.join(serverDir, 'auto-install.sh'), wrapperScript, 'utf-8');
     await execAsync(`chmod +x ${path.join(serverDir, 'auto-install.sh')}`);
     startupCommand = 'bash auto-install.sh';
+  }
+
+  // --- ETAPA 5: Se ainda não tem startup, falha com erro claro ---
+  if (!startupCommand) {
+    console.error('[Detector] ERROR: Não foi possível detectar o loader nem script de startup.');
+    console.error('[Detector] Arquivos encontrados: ' + files.join(', '));
+    return null;
   }
 
   // Atualiza startup via API (opcional - requer API key configurada)
