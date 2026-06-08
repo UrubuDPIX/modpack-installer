@@ -517,7 +517,10 @@ async function runCommandWithLog(command: string, log: string[]): Promise<void> 
   }
 }
 
-async function downloadFile(url: string, dest: string): Promise<void> {
+async function downloadFile(url: string, dest: string, redirectCount = 0): Promise<void> {
+  if (redirectCount > 5) {
+    throw new Error(`Muitos redirects ao baixar ${url}`);
+  }
   console.log(`[Download] URL: ${url}`);
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https:') ? https : http;
@@ -527,6 +530,22 @@ async function downloadFile(url: string, dest: string): Promise<void> {
     const startTime = Date.now();
 
     const request = client.get(url, { timeout: 600_000 }, (response: any) => {
+      // Segue redirects (301, 302, 303, 307, 308)
+      if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
+        const redirectUrl = response.headers.location;
+        if (!redirectUrl) {
+          file.close();
+          reject(new Error(`HTTP ${response.statusCode} sem header Location`));
+          return;
+        }
+        file.close();
+        console.log(`[Download] Redirect ${response.statusCode} -> ${redirectUrl}`);
+        downloadFile(redirectUrl, dest, redirectCount + 1)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
       if (response.statusCode !== 200) {
         file.close();
         reject(new Error(`HTTP ${response.statusCode} para ${url}`));
