@@ -516,40 +516,62 @@ async function processInstallation(
         const serverJar = installerJar.replace('-installer.jar', '.jar');
         const scriptPath = path.join(serverDir, 'auto-install.sh');
         const scriptContent = `#!/bin/bash
-set -e
-SERVER_JAR="${serverJar}"
 INSTALLER_JAR="${installerJar}"
+EXPECTED_JAR="${serverJar}"
 LOG_FILE="installer.log"
 
-# Se o server jar não existe, roda o instalador
-if [ ! -f "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] Server jar not found ($SERVER_JAR). Running installer..."
-  echo "[Modpack Installer] Java version:"
-  java -version
+# Procura por qualquer jar de servidor disponível
+findServerJar() {
+  # Prioridade 1: jar esperado
+  [ -f "$EXPECTED_JAR" ] && { echo "$EXPECTED_JAR"; return; }
+  # Prioridade 2: forge-*-universal.jar
+  local universal=$(ls -1 forge-*-universal.jar 2>/dev/null | head -1)
+  [ -n "$universal" ] && { echo "$universal"; return; }
+  # Prioridade 3: forge-*.jar (sem -installer)
+  local forgejar=$(ls -1 forge-*.jar 2>/dev/null | grep -v installer | head -1)
+  [ -n "$forgejar" ] && { echo "$forgejar"; return; }
+  # Prioridade 4: minecraft_server.*.jar
+  local mcjar=$(ls -1 minecraft_server.*.jar 2>/dev/null | head -1)
+  [ -n "$mcjar" ] && { echo "$mcjar"; return; }
+  # Prioridade 5: qualquer jar exceto installer
+  local anyjar=$(ls -1 *.jar 2>/dev/null | grep -v installer | head -1)
+  [ -n "$anyjar" ] && { echo "$anyjar"; return; }
+  echo ""
+}
+
+SERVER_JAR=$(findServerJar)
+
+# Se não achou nenhum jar de servidor, roda o instalador
+if [ -z "$SERVER_JAR" ]; then
+  echo "[Modpack Installer] No server jar found. Running installer..."
+  echo "[Modpack Installer] Java: $(java -version 2>&1 | head -1)"
   echo "[Modpack Installer] Installer: $INSTALLER_JAR"
-  echo "[Modpack Installer] Running: java -jar $INSTALLER_JAR -installServer"
   
-  if ! java -jar "$INSTALLER_JAR" -installServer 2>&1 | tee "$LOG_FILE"; then
-    echo "[Modpack Installer] Installer failed! Exit code: $?"
-    echo "[Modpack Installer] Log output:"
-    cat "$LOG_FILE" 2>/dev/null || echo "(no log file)"
-    echo "[Modpack Installer] Cleaning and retrying..."
+  # Limpa instalação anterior se houver
+  rm -rf libraries/ forge*.log "$LOG_FILE"
+  
+  # Roda instalador
+  java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
+  INSTALLER_EXIT=$?
+  
+  if [ $INSTALLER_EXIT -ne 0 ]; then
+    echo "[Modpack Installer] Installer failed (exit $INSTALLER_EXIT). Retrying..."
     rm -rf libraries/ forge*.log "$LOG_FILE"
-    if ! java -jar "$INSTALLER_JAR" -installServer 2>&1 | tee "$LOG_FILE"; then
-      echo "[Modpack Installer] Retry also failed! Exit code: $?"
-      echo "[Modpack Installer] Log output:"
-      cat "$LOG_FILE" 2>/dev/null || echo "(no log file)"
-    fi
+    java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
+    INSTALLER_EXIT=$?
+    echo "[Modpack Installer] Retry exit code: $INSTALLER_EXIT"
   fi
-  echo "[Modpack Installer] Installation complete."
+  
+  # Procura jar novamente após instalação
+  SERVER_JAR=$(findServerJar)
 fi
 
-if [ ! -f "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] ERROR: Server jar still missing after installation!"
-  echo "[Modpack Installer] JAR files in directory:"
-  ls -la *.jar 2>/dev/null || echo "(no jar files)"
-  echo "[Modpack Installer] All files:"
-  ls -la
+if [ -z "$SERVER_JAR" ]; then
+  echo "[Modpack Installer] ERROR: No server jar found after installation!"
+  echo "[Modpack Installer] JAR files:"
+  ls -1 *.jar 2>/dev/null || echo "(none)"
+  echo "[Modpack Installer] Installer log:"
+  cat "$LOG_FILE" 2>/dev/null || echo "(no log)"
   exit 1
 fi
 
