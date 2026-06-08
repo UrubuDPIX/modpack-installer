@@ -515,19 +515,30 @@ async function processInstallation(
       if (installerJar) {
         const serverJar = installerJar.replace('-installer.jar', '.jar');
         const scriptPath = path.join(serverDir, 'auto-install.sh');
+        
+        // Pré-instala Forge no backend (Docker tem internet no host) para baixar libraries
+        const librariesDir = path.join(serverDir, 'libraries');
+        if (!await directoryExists(librariesDir)) {
+          console.log('[Installer] Pré-instalando Forge com libraries no backend...');
+          try {
+            const mcVersion = await detectMinecraftVersion(serverDir, version);
+            const log: string[] = [];
+            await installForge(serverDir, mcVersion, log);
+            console.log('[Installer] Forge pré-instalado com libraries');
+          } catch (installErr: any) {
+            console.warn(`[Installer] Pré-instalação falhou: ${installErr?.message || installErr}`);
+          }
+        }
+        
         const scriptContent = `#!/bin/bash
 INSTALLER_JAR="${installerJar}"
 EXPECTED_JAR="${serverJar}"
-LOG_FILE="installer.log"
 
 # Procura APENAS por jars Forge (nunca vanilla)
 findForgeJar() {
-  # Prioridade 1: jar esperado (forge-VERSION.jar)
   [ -f "$EXPECTED_JAR" ] && { echo "$EXPECTED_JAR"; return; }
-  # Prioridade 2: forge-*-universal.jar
   local universal=$(ls -1 forge-*-universal.jar 2>/dev/null | head -1)
   [ -n "$universal" ] && { echo "$universal"; return; }
-  # Prioridade 3: forge-*.jar (sem -installer)
   local forgejar=$(ls -1 forge-*.jar 2>/dev/null | grep -v installer | head -1)
   [ -n "$forgejar" ] && { echo "$forgejar"; return; }
   echo ""
@@ -535,84 +546,16 @@ findForgeJar() {
 
 SERVER_JAR=$(findForgeJar)
 
-# Se não achou jar Forge, roda o instalador
+# Se não achou jar Forge, tenta rodar instalador
 if [ -z "$SERVER_JAR" ]; then
   echo "[Modpack Installer] No Forge jar found. Running installer..."
-  echo "[Modpack Installer] Java: $(java -version 2>&1 | head -1)"
-  echo "[Modpack Installer] Installer: $INSTALLER_JAR"
-  
-  # Detecta versão do Minecraft
-  MC_VERSION=$(echo "$INSTALLER_JAR" | cut -d'-' -f2)
-  echo "[Modpack Installer] Detected MC version: $MC_VERSION"
-  
-  # Baixa minecraft_server.jar (Forge installer precisa)
-  SERVER_JAR_NAME="minecraft_server.$MC_VERSION.jar"
-  if [ -n "$MC_VERSION" ] && [ ! -f "$SERVER_JAR_NAME" ]; then
-    echo "[Modpack Installer] Downloading $SERVER_JAR_NAME..."
-    if [ "$MC_VERSION" = "1.12.2" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar" -o "$SERVER_JAR_NAME"
-    elif [ "$MC_VERSION" = "1.16.5" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/1b557e7b033b583cd9f66746b7a9ab1ec1673ced/server.jar" -o "$SERVER_JAR_NAME"
-    elif [ "$MC_VERSION" = "1.18.2" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/c8f54c584d3e5b69c7a6f44336ed7c2b41d62b01/server.jar" -o "$SERVER_JAR_NAME"
-    elif [ "$MC_VERSION" = "1.19.2" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/f69c284232d7c7580bd89d5f5e0b2a24c6c71a71/server.jar" -o "$SERVER_JAR_NAME"
-    elif [ "$MC_VERSION" = "1.20.1" ]; then
-      curl -fsSL "https://piston-data.mojang.com/v1/objects/84194a0f4159e8ed1e21d5f3d9d6e6e6e6e6e6e6/server.jar" -o "$SERVER_JAR_NAME"
-    else
-      echo "[Modpack Installer] Unknown MC version $MC_VERSION, skipping server.jar download"
-    fi
-    if [ -f "$SERVER_JAR_NAME" ]; then
-      echo "[Modpack Installer] $SERVER_JAR_NAME downloaded successfully"
-    else
-      echo "[Modpack Installer] Failed to download $SERVER_JAR_NAME"
-    fi
-  fi
-  
-  # Limpa instalação anterior
-  rm -rf libraries/ forge*.log "$LOG_FILE"
-  
-  # Roda instalador
-  echo "[Modpack Installer] Running installer (attempt 1)..."
-  java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
-  INSTALLER_EXIT=$?
-  
-  if [ $INSTALLER_EXIT -ne 0 ]; then
-    echo "[Modpack Installer] Installer failed (exit $INSTALLER_EXIT). LOG:"
-    cat "$LOG_FILE" 2>/dev/null || echo "(empty log)"
-    echo "[Modpack Installer] Retrying after cleanup..."
-    rm -rf libraries/ forge*.log "$LOG_FILE"
-    java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
-    INSTALLER_EXIT=$?
-    if [ $INSTALLER_EXIT -ne 0 ]; then
-      echo "[Modpack Installer] Retry also failed (exit $INSTALLER_EXIT). LOG:"
-      cat "$LOG_FILE" 2>/dev/null || echo "(empty log)"
-    fi
-  fi
-  
-  # Procura jar Forge após instalação
+  java -jar "$INSTALLER_JAR" -installServer
   SERVER_JAR=$(findForgeJar)
-  
-  # Fallback: baixa universal.jar direto do Maven se instalador falhou
-  if [ -z "$SERVER_JAR" ]; then
-    FORGE_FULL_VER=$(echo "$INSTALLER_JAR" | sed 's/forge-//' | sed 's/-installer.jar//')
-    UNIVERSAL_JAR="forge-\${FORGE_FULL_VER}-universal.jar"
-    echo "[Modpack Installer] Downloading universal jar from Maven: \$UNIVERSAL_JAR..."
-    curl -fsSL "https://maven.minecraftforge.net/net/minecraftforge/forge/\${FORGE_FULL_VER}/\${UNIVERSAL_JAR}" -o "\$UNIVERSAL_JAR"
-    if [ -f "\$UNIVERSAL_JAR" ]; then
-      echo "[Modpack Installer] Universal jar downloaded successfully"
-      SERVER_JAR="\$UNIVERSAL_JAR"
-    else
-      echo "[Modpack Installer] Failed to download universal jar from Maven"
-    fi
-  fi
 fi
 
 if [ -z "$SERVER_JAR" ]; then
   echo "[Modpack Installer] ERROR: No Forge server jar found!"
-  echo "[Modpack Installer] JAR files in directory:"
-  ls -1 *.jar 2>/dev/null || echo "(none)"
-  echo "[Modpack Installer] Cannot start - this is a Forge modpack and Forge is not installed."
+  ls -1 *.jar 2>/dev/null || echo "(no jars)"
   exit 1
 fi
 
