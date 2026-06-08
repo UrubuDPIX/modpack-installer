@@ -340,84 +340,145 @@ async function processInstallation(
         if (manifest.files && Array.isArray(manifest.files)) {
           await fs.mkdir(modsDir, { recursive: true });
           const cfKey = await getCurseForgeKey();
-          for (const modInfo of manifest.files) {
+          
+          let cfLoaderType = 0;
+          if (version.loader === 'Forge' || detected.loader === 'Forge') cfLoaderType = 1;
+          else if (version.loader === 'Fabric' || detected.loader === 'Fabric') cfLoaderType = 4;
+          else if (version.loader === 'Quilt' || detected.loader === 'Quilt') cfLoaderType = 5;
+          else if (version.loader === 'NeoForge' || detected.loader === 'NeoForge') cfLoaderType = 6;
+          
+          const mcVer = version.minecraftVersion || detected.minecraftVersion || '';
+
+          const downloadQueue = [...manifest.files];
+          const processedMods = new Set<number>();
+          let downloadedCount = 0;
+
+          while (downloadQueue.length > 0) {
+            const modInfo = downloadQueue.shift();
+            if (!modInfo || !modInfo.projectID) continue;
+            
+            // Evita loops infinitos ou downloads duplicados
+            if (processedMods.has(modInfo.projectID)) continue;
+
             try {
-              if (modInfo.projectID && modInfo.fileID) {
-                // Busca URL de download do mod via API CurseForge
-                let modDownloadUrl = '';
-                let modFileName = `${modInfo.projectID}_${modInfo.fileID}.jar`;
-                if (cfKey) {
-                  try {
-                    // Busca dados do MOD para verificar se é client-side (categorias)
-                    log.push(`[${new Date().toISOString()}] [CurseForge] Verificando mod ${modInfo.projectID}...`);
-                    const modMetaRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}`, {
-                      headers: { 'x-api-key': cfKey }
-                    });
-                    
-                    if (modMetaRes.ok) {
-                      const modMeta = await modMetaRes.json() as any;
-                      const modDetails = modMeta.data;
-                      
-                      // Verifica se o mod pertence a categorias client-side
-                      const isClientSide = modDetails.categories?.some((cat: any) => 
-                        CF_CLIENT_SIDE_CATEGORIES.includes(cat.id)
-                      );
-                      
-                      if (isClientSide) {
-                        log.push(`[${new Date().toISOString()}] [CurseForge] IGNORADO (Client-Side): ${modDetails.name}`);
-                        continue; // Pula o download deste mod
-                      }
-                    }
-                    
-                    // Busca dados do ARQUIVO para obter nome correto e URL
-                    log.push(`[${new Date().toISOString()}] [CurseForge] Buscando arquivo ${modInfo.projectID}/${modInfo.fileID}...`);
-                    const fileDataRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}`, {
-                      headers: { 'x-api-key': cfKey }
-                    });
-                    log.push(`[${new Date().toISOString()}] [CurseForge] API status: ${fileDataRes.status}`);
-                    if (fileDataRes.ok) {
-                      const fileData = await fileDataRes.json() as any;
-                      const fileInfo = fileData.data;
-                      modFileName = fileInfo.fileName || modFileName;
-                      log.push(`[${new Date().toISOString()}] [CurseForge] fileName: ${fileInfo.fileName || 'N/A'}, downloadUrl: ${fileInfo.downloadUrl ? 'SIM' : 'N/A'}`);
-                      if (fileInfo.downloadUrl) {
-                        modDownloadUrl = fileInfo.downloadUrl;
-                      }
-                    }
-                    // Se não tem downloadUrl, tenta endpoint /download
-                    if (!modDownloadUrl) {
-                      log.push(`[${new Date().toISOString()}] [CurseForge] Tentando endpoint /download...`);
-                      const modDownloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${modInfo.fileID}/download`, {
-                        headers: { 'x-api-key': cfKey }
-                      });
-                      log.push(`[${new Date().toISOString()}] [CurseForge] /download status: ${modDownloadRes.status}`);
-                      if (modDownloadRes.ok) {
-                        const modDownloadData = await modDownloadRes.json() as any;
-                        modDownloadUrl = modDownloadData.data?.url || '';
-                        log.push(`[${new Date().toISOString()}] [CurseForge] /download url: ${modDownloadUrl ? 'SIM' : 'VAZIO'}`);
-                      }
-                    }
-                  } catch (e) {
-                    log.push(`[${new Date().toISOString()}] [CurseForge] Erro na API: ${e}`);
+              let currentFileId = modInfo.fileID;
+
+              // Se não tiver fileID (caso de dependência descoberta dinamicamente), busca na API
+              if (!currentFileId && cfKey && mcVer) {
+                log.push(`[${new Date().toISOString()}] [CurseForge] Resolvendo arquivo mais recente para dependência (modId: ${modInfo.projectID})...`);
+                const filesRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files?gameVersion=${mcVer}&modLoaderType=${cfLoaderType}`, {
+                  headers: { 'x-api-key': cfKey }
+                });
+                if (filesRes.ok) {
+                  const filesData = await filesRes.json() as any;
+                  if (filesData.data && filesData.data.length > 0) {
+                    currentFileId = filesData.data[0].id;
+                    log.push(`[${new Date().toISOString()}] [CurseForge] Resolvido para fileID: ${currentFileId}`);
                   }
                 }
-                // Fallback manual com nome correto do arquivo
-                if (!modDownloadUrl) {
-                  const idStr = String(modInfo.fileID);
-                  const part1 = idStr.substring(0, idStr.length - 3) || '0';
-                  const part2 = idStr.substring(idStr.length - 3).padStart(3, '0');
-                  modDownloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${modFileName}`;
-                }
-                if (modDownloadUrl) {
-                  const modDest = path.join(modsDir, modFileName);
-                  await downloadFile(modDownloadUrl, modDest);
+              }
+
+              if (!currentFileId) {
+                log.push(`[${new Date().toISOString()}] [CurseForge] AVISO: Não foi possível determinar o fileID para modId ${modInfo.projectID}`);
+                continue;
+              }
+
+              // Marca como processado
+              processedMods.add(modInfo.projectID);
+
+              let modDownloadUrl = '';
+              let modFileName = `${modInfo.projectID}_${currentFileId}.jar`;
+              let fileDependencies: any[] = [];
+
+              if (cfKey) {
+                try {
+                  // Busca dados do MOD para verificar se é client-side (categorias)
+                  log.push(`[${new Date().toISOString()}] [CurseForge] Verificando mod ${modInfo.projectID}...`);
+                  const modMetaRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}`, {
+                    headers: { 'x-api-key': cfKey }
+                  });
+                  
+                  if (modMetaRes.ok) {
+                    const modMeta = await modMetaRes.json() as any;
+                    const modDetails = modMeta.data;
+                    
+                    // Verifica se o mod pertence a categorias client-side
+                    const isClientSide = modDetails.categories?.some((cat: any) => 
+                      CF_CLIENT_SIDE_CATEGORIES.includes(cat.id)
+                    );
+                    
+                    if (isClientSide) {
+                      log.push(`[${new Date().toISOString()}] [CurseForge] IGNORADO (Client-Side): ${modDetails.name}`);
+                      continue; // Pula o download deste mod
+                    }
+                  }
+                  
+                  // Busca dados do ARQUIVO para obter nome correto, URL e DEPENDÊNCIAS
+                  log.push(`[${new Date().toISOString()}] [CurseForge] Buscando arquivo ${modInfo.projectID}/${currentFileId}...`);
+                  const fileDataRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${currentFileId}`, {
+                    headers: { 'x-api-key': cfKey }
+                  });
+                  log.push(`[${new Date().toISOString()}] [CurseForge] API status: ${fileDataRes.status}`);
+                  if (fileDataRes.ok) {
+                    const fileData = await fileDataRes.json() as any;
+                    const fileInfo = fileData.data;
+                    modFileName = fileInfo.fileName || modFileName;
+                    log.push(`[${new Date().toISOString()}] [CurseForge] fileName: ${fileInfo.fileName || 'N/A'}, downloadUrl: ${fileInfo.downloadUrl ? 'SIM' : 'N/A'}`);
+                    
+                    if (fileInfo.downloadUrl) {
+                      modDownloadUrl = fileInfo.downloadUrl;
+                    }
+                    
+                    if (fileInfo.dependencies && Array.isArray(fileInfo.dependencies)) {
+                      fileDependencies = fileInfo.dependencies;
+                    }
+                  }
+                  
+                  // Se não tem downloadUrl, tenta endpoint /download
+                  if (!modDownloadUrl) {
+                    log.push(`[${new Date().toISOString()}] [CurseForge] Tentando endpoint /download...`);
+                    const modDownloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${currentFileId}/download`, {
+                      headers: { 'x-api-key': cfKey }
+                    });
+                    log.push(`[${new Date().toISOString()}] [CurseForge] /download status: ${modDownloadRes.status}`);
+                    if (modDownloadRes.ok) {
+                      const modDownloadData = await modDownloadRes.json() as any;
+                      modDownloadUrl = modDownloadData.data?.url || '';
+                      log.push(`[${new Date().toISOString()}] [CurseForge] /download url: ${modDownloadUrl ? 'SIM' : 'VAZIO'}`);
+                    }
+                  }
+                } catch (e) {
+                  log.push(`[${new Date().toISOString()}] [CurseForge] Erro na API: ${e}`);
                 }
               }
+
+              // Fallback manual com nome correto do arquivo (funciona na CDN do CurseForge)
+              if (!modDownloadUrl) {
+                const idStr = String(currentFileId);
+                const part1 = idStr.substring(0, idStr.length - 3) || '0';
+                const part2 = idStr.substring(idStr.length - 3).padStart(3, '0');
+                modDownloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${modFileName}`;
+              }
+
+              if (modDownloadUrl) {
+                const modDest = path.join(modsDir, modFileName);
+                await downloadFile(modDownloadUrl, modDest);
+                downloadedCount++;
+              }
+
+              // Enfileira dependências obrigatórias
+              for (const dep of fileDependencies) {
+                if (dep.relationType === 3 && !processedMods.has(dep.modId)) { // 3 = RequiredDependency
+                  log.push(`[${new Date().toISOString()}] [CurseForge] Dependência encontrada: modId ${dep.modId}, adicionando à fila.`);
+                  downloadQueue.push({ projectID: dep.modId });
+                }
+              }
+
             } catch (modErr: any) {
               log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar mod ${modInfo.projectID}/${modInfo.fileID}: ${modErr.message}`);
             }
           }
-          log.push(`[${new Date().toISOString()}] Mods baixados: ${manifest.files.length}`);
+          log.push(`[${new Date().toISOString()}] Mods baixados (incluindo dependências): ${downloadedCount}`);
         }
       } catch (e: any) {
         log.push(`[${new Date().toISOString()}] AVISO: Falha ao processar manifest.json: ${e.message}`);
