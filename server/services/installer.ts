@@ -975,6 +975,17 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
     detectedLoader = 'forge';
     startupCommand = 'bash run.sh';
   }
+  // Modpacks (como Stoneblock): LaunchServer.sh ou ServerStart.sh
+  else if (files.includes('LaunchServer.sh')) {
+    console.log('[Detector] LaunchServer.sh encontrado');
+    detectedLoader = 'forge';
+    startupCommand = 'bash LaunchServer.sh';
+  }
+  else if (files.includes('ServerStart.sh')) {
+    console.log('[Detector] ServerStart.sh encontrado');
+    detectedLoader = 'forge';
+    startupCommand = 'bash ServerStart.sh';
+  }
   // NeoForge: unix_args.txt
   else {
     const neoForgePattern = /libraries\/net\/neoforged\/neoforge\/([^/]+)\/unix_args\.txt/;
@@ -1242,12 +1253,31 @@ async function detectMinecraftVersion(serverDir: string, version: any): Promise<
   // 3. Tenta inferir pelo nome do modpack
   const modpackName = (version.modpack?.name || '').toLowerCase();
   if (modpackName.includes('rlcraft')) return '1.12.2';
+  if (modpackName.includes('stoneblock')) return '1.12.2';
   if (modpackName.includes('skyfactory') && modpackName.includes('4')) return '1.12.2';
   if (modpackName.includes('atm10') || modpackName.includes('all the mods 10')) return '1.21.1';
   if (modpackName.includes('atm9') || modpackName.includes('all the mods 9')) return '1.20.1';
   if (modpackName.includes('atm8') || modpackName.includes('all the mods 8')) return '1.19.2';
   
-  // 4. Fallback padrao
+  // 4. Se tiver um instalador forge-xxx, tenta extrair a versão do nome do instalador
+  try {
+    const files = await fs.readdir(serverDir);
+    const installer = files.find(f => f.startsWith('forge-') && f.endsWith('-installer.jar'));
+    if (installer) {
+      // forge-1.12.2-14.23.5.2836-installer.jar -> extrai "1.12.2"
+      const parts = installer.split('-');
+      if (parts.length >= 2) {
+        const potentialVersion = parts[1];
+        if (potentialVersion.split('.').length >= 2) {
+          return potentialVersion;
+        }
+      }
+    }
+  } catch (e) {
+    // ignora
+  }
+
+  // 5. Fallback padrao
   return '1.20.1';
 }
 
