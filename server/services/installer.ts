@@ -516,17 +516,48 @@ async function processInstallation(
         const serverJar = installerJar.replace('-installer.jar', '.jar');
         const scriptPath = path.join(serverDir, 'auto-install.sh');
         
-        // Pré-instala Forge no backend (Docker tem internet no host) para baixar libraries
+        // Pré-instala Forge no backend usando o PRÓPRIO installer do modpack
         const librariesDir = path.join(serverDir, 'libraries');
-        if (!await directoryExists(librariesDir)) {
-          console.log('[Installer] Pré-instalando Forge com libraries no backend...');
+        const forgeJarExists = await fileExists(path.join(serverDir, serverJar));
+        if (!await directoryExists(librariesDir) || !forgeJarExists) {
+          console.log(`[Installer] Pré-instalando com ${installerJar} no backend...`);
           try {
+            // 1. Baixa minecraft_server.jar se necessário
             const mcVersion = await detectMinecraftVersion(serverDir, version);
-            const log: string[] = [];
-            await installForge(serverDir, mcVersion, log);
-            console.log('[Installer] Forge pré-instalado com libraries');
+            const mcServerJar = path.join(serverDir, `minecraft_server.${mcVersion}.jar`);
+            if (!await fileExists(mcServerJar)) {
+              const mcUrls: Record<string, string> = {
+                '1.12.2': 'https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar',
+                '1.16.5': 'https://piston-data.mojang.com/v1/objects/1b557e7b033b583cd9f66746b7a9ab1ec1673ced/server.jar',
+                '1.18.2': 'https://piston-data.mojang.com/v1/objects/c8f54c584d3e5b69c7a6f44336ed7c2b41d62b01/server.jar',
+                '1.19.2': 'https://piston-data.mojang.com/v1/objects/f69c284232d7c7580bd89d5f5e0b2a24c6c71a71/server.jar',
+                '1.20.1': 'https://piston-data.mojang.com/v1/objects/84194a0f4159e8ed1e21d5f3d9d6e6e6e6e6e6e6/server.jar'
+              };
+              if (mcUrls[mcVersion]) {
+                console.log(`[Installer] Baixando minecraft_server.${mcVersion}.jar...`);
+                await downloadFile(mcUrls[mcVersion], mcServerJar);
+                console.log(`[Installer] minecraft_server.${mcVersion}.jar baixado`);
+              }
+            }
+            
+            // 2. Roda o installer do modpack com Java local
+            console.log(`[Installer] Executando: java -jar ${installerJar} -installServer`);
+            await execAsync(`cd ${serverDir} && java -jar ${installerJar} -installServer`);
+            console.log('[Installer] Forge instalado com sucesso no backend');
           } catch (installErr: any) {
-            console.warn(`[Installer] Pré-instalação falhou: ${installErr?.message || installErr}`);
+            console.error(`[Installer] ERRO na pré-instalação: ${installErr?.message || installErr}`);
+            console.error('[Installer] Tentando baixar universal.jar do Maven...');
+            try {
+              const mcVersion = await detectMinecraftVersion(serverDir, version);
+              const forgeFullVer = installerJar.replace('forge-', '').replace('-installer.jar', '');
+              const universalJar = `forge-${forgeFullVer}-universal.jar`;
+              const universalUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeFullVer}/${universalJar}`;
+              console.log(`[Installer] Baixando ${universalJar}...`);
+              await downloadFile(universalUrl, path.join(serverDir, universalJar));
+              console.log(`[Installer] ${universalJar} baixado do Maven`);
+            } catch (dlErr: any) {
+              console.error(`[Installer] Falha ao baixar universal.jar: ${dlErr?.message || dlErr}`);
+            }
           }
         }
         
@@ -545,13 +576,6 @@ findForgeJar() {
 }
 
 SERVER_JAR=$(findForgeJar)
-
-# Se não achou jar Forge, tenta rodar instalador
-if [ -z "$SERVER_JAR" ]; then
-  echo "[Modpack Installer] No Forge jar found. Running installer..."
-  java -jar "$INSTALLER_JAR" -installServer
-  SERVER_JAR=$(findForgeJar)
-fi
 
 if [ -z "$SERVER_JAR" ]; then
   echo "[Modpack Installer] ERROR: No Forge server jar found!"
