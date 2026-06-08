@@ -405,7 +405,7 @@ async function processInstallation(
                     const modDetails = modMeta.data;
                     
                     // Verifica se o mod pertence a categorias client-side
-                    const isClientSide = modDetails.categories?.some((cat: any) => 
+                    const isClientSide = modDetails.categories?.length > 0 && modDetails.categories.every((cat: any) => 
                       CF_CLIENT_SIDE_CATEGORIES.includes(cat.id)
                     );
                     
