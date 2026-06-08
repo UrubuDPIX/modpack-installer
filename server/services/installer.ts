@@ -516,13 +516,29 @@ async function processInstallation(
         const serverJar = installerJar.replace('-installer.jar', '.jar');
         const scriptPath = path.join(serverDir, 'auto-install.sh');
         const scriptContent = `#!/bin/bash
-if [ ! -d "libraries" ] || [ ! "$(ls -A libraries 2>/dev/null)" ]; then
-  echo "[Modpack Installer] Libraries not found. Running installer..."
-  java -jar ${installerJar} -installServer
-  echo "[Modpack Installer] Libraries installed."
+SERVER_JAR="${serverJar}"
+INSTALLER_JAR="${installerJar}"
+
+# Se o server jar não existe, roda o instalador
+if [ ! -f "$SERVER_JAR" ]; then
+  echo "[Modpack Installer] Server jar not found. Running installer..."
+  java -jar "$INSTALLER_JAR" -installServer
+  if [ $? -ne 0 ]; then
+    echo "[Modpack Installer] Installer failed! Cleaning and retrying..."
+    rm -rf libraries/ forge*.log
+    java -jar "$INSTALLER_JAR" -installServer
+  fi
+  echo "[Modpack Installer] Installation complete."
 fi
+
+if [ ! -f "$SERVER_JAR" ]; then
+  echo "[Modpack Installer] ERROR: Server jar still missing after installation!"
+  ls -la *.jar
+  exit 1
+fi
+
 echo "[Modpack Installer] Starting server..."
-java -jar ${serverJar} nogui
+java -jar "$SERVER_JAR" nogui
 `;
         await fs.writeFile(scriptPath, scriptContent, 'utf-8');
         await execAsync(`chmod +x ${scriptPath}`);
