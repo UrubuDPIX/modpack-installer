@@ -163,6 +163,22 @@ async function processInstallation(
     log.push(`[${new Date().toISOString()}] Extraindo arquivos...`);
     await execAsync(`cd ${serverDir} && unzip -o modpack.zip && rm modpack.zip`);
     
+    // Se o ZIP extraiu tudo para uma única subpasta (ex: StoneBlock-1.0.36/), move para raiz
+    const extractedEntries = await fs.readdir(serverDir);
+    const topLevelDirs = [];
+    for (const entry of extractedEntries) {
+      const entryPath = path.join(serverDir, entry);
+      const stat = await fs.stat(entryPath).catch(() => null);
+      if (stat?.isDirectory() && entry !== 'world' && entry !== 'world_backup') {
+        topLevelDirs.push(entry);
+      }
+    }
+    if (topLevelDirs.length === 1) {
+      const singleDir = topLevelDirs[0];
+      log.push(`[${new Date().toISOString()}] Movendo arquivos de ${singleDir}/ para raiz...`);
+      await execAsync(`cd ${serverDir} && cp -r ${singleDir}/* . && rm -rf ${singleDir}`);
+    }
+    
     // Move arquivos do server pack se existir
     const overridesDir = path.join(serverDir, 'overrides');
     if (await directoryExists(overridesDir)) {
