@@ -508,10 +508,26 @@ async function processInstallation(
     }
   } finally {
     clearInterval(flushInterval);
-    // Garante que auto-install.sh seja criado mesmo se a instalação falhar em etapas anteriores
+    // Garante que auto-install.sh seja criado diretamente no disco
     try {
-      const mcVersion = await detectMinecraftVersion(serverDir, version);
-      await detectAndConfigureStartup(serverId, serverDir, mcVersion, version);
+      const files = await fs.readdir(serverDir);
+      const installerJar = files.find((f: string) => (f.startsWith('forge-') || f.startsWith('neoforge-')) && f.endsWith('-installer.jar'));
+      if (installerJar) {
+        const serverJar = installerJar.replace('-installer.jar', '.jar');
+        const scriptPath = path.join(serverDir, 'auto-install.sh');
+        const scriptContent = `#!/bin/bash
+if [ ! -d "libraries" ] || [ ! "$(ls -A libraries 2>/dev/null)" ]; then
+  echo "[Modpack Installer] Libraries not found. Running installer..."
+  java -jar ${installerJar} -installServer
+  echo "[Modpack Installer] Libraries installed."
+fi
+echo "[Modpack Installer] Starting server..."
+java -jar ${serverJar} nogui
+`;
+        await fs.writeFile(scriptPath, scriptContent, 'utf-8');
+        await execAsync(`chmod +x ${scriptPath}`);
+        console.log(`[Installer] auto-install.sh criado em ${scriptPath}`);
+      }
     } catch (e: any) {
       console.warn(`[Installer] Falha ao criar auto-install.sh no finally: ${e?.message || e}`);
     }
