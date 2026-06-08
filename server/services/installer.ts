@@ -194,6 +194,38 @@ async function processInstallation(
     
     if (isServerPack) {
       log.push(`[${new Date().toISOString()}] Server Pack detectado! Pulando download de mods individuais.`);
+      
+      // Pré-instala Forge/NeoForge no backend com Docker (tem internet)
+      const javaImage = getJavaImageForVersion(await detectMinecraftVersion(serverDir, version));
+      if (hasForgeInstaller) {
+        const installerJar = (await fs.readdir(serverDir)).find((f: string) => f.startsWith('forge-') && f.endsWith('-installer.jar'));
+        if (installerJar) {
+          const serverJar = installerJar.replace('-installer.jar', '.jar');
+          if (!await fileExists(path.join(serverDir, serverJar)) || !await directoryExists(path.join(serverDir, 'libraries'))) {
+            log.push(`[${new Date().toISOString()}] Pre-instalando Forge com Docker...`);
+            try {
+              await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`);
+              log.push(`[${new Date().toISOString()}] Forge pre-instalado com sucesso`);
+            } catch (e: any) {
+              log.push(`[${new Date().toISOString()}] AVISO: Pre-instalação falhou: ${e?.message || e}`);
+            }
+          }
+        }
+      }
+      if (hasNeoForgeInstaller) {
+        const installerJar = (await fs.readdir(serverDir)).find((f: string) => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+        if (installerJar) {
+          if (!await directoryExists(path.join(serverDir, 'libraries'))) {
+            log.push(`[${new Date().toISOString()}] Pre-instalando NeoForge com Docker...`);
+            try {
+              await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`);
+              log.push(`[${new Date().toISOString()}] NeoForge pre-instalado com sucesso`);
+            } catch (e: any) {
+              log.push(`[${new Date().toISOString()}] AVISO: Pre-instalação falhou: ${e?.message || e}`);
+            }
+          }
+        }
+      }
     } else {
       // Baixa mods do modrinth.index.json (funciona para QUALQUER modloader)
       log.push(`[${new Date().toISOString()}] Verificando modrinth.index.json...`);
