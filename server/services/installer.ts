@@ -98,6 +98,7 @@ const CLIENT_SIDE_MODS = [
   'ambientsounds',
   'biomeinfo',
   'FPS-Monitor',
+  'spongemixins',
   'debugify',
   'authme',
   'reauth',
