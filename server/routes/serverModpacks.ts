@@ -161,7 +161,15 @@ router.post('/:id/modpack', async (req, res) => {
         const fileData = await fileRes.json() as any;
         const file = fileData.data;
         versionName = file.displayName || serverFileId;
-        minecraftVersion = file.gameVersions?.[0] || 'unknown';
+        
+        // Melhor extração da versão do Minecraft (evita pegar "Forge" ou "Fabric")
+        const mcVerObj = file.sortableGameVersions?.find((v: any) => v.gameVersionName && v.gameVersionName.match(/^1\.\d+/));
+        if (mcVerObj) {
+          minecraftVersion = mcVerObj.gameVersionName;
+        } else {
+          minecraftVersion = file.gameVersions?.find((v: string) => v.match(/^1\.\d+/)) || file.gameVersions?.[0] || 'unknown';
+        }
+        
         const rawLoader = file.sortableGameVersions?.find((v: any) => ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(v.gameVersionName))?.gameVersionName || 'Forge';
         loader = ['Forge', 'Fabric', 'NeoForge', 'Quilt'].includes(rawLoader) ? rawLoader : 'Forge';
         loaderVersion = rawLoader;
