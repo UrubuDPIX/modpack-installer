@@ -1449,6 +1449,7 @@ async function detectMinecraftVersion(serverDir: string, version: any): Promise<
   if (modpackName.includes('atm10') || modpackName.includes('all the mods 10')) return '1.21.1';
   if (modpackName.includes('atm9') || modpackName.includes('all the mods 9')) return '1.20.1';
   if (modpackName.includes('atm8') || modpackName.includes('all the mods 8')) return '1.19.2';
+  if (modpackName.includes('atm7') || modpackName.includes('all the mods 7')) return '1.18.2';
   
   // 4. Se tiver um instalador forge-xxx, tenta extrair a versão do nome do instalador
   try {
@@ -1855,6 +1856,10 @@ async function autoDetectModloader(serverDir: string, version: any, log: string[
       minecraftVersion = v;
       break;
     }
+  }
+  
+  if (!minecraftVersion) {
+    minecraftVersion = await detectMinecraftVersion(serverDir, version);
   }
 
   // 1. Verifica manifest.json (CurseForge Pack)
