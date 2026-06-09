@@ -1006,7 +1006,7 @@ async function configureNeoForge(serverDir: string, version: any, log: string[])
       '1.20.1': '20.2.59',
       '1.20.4': '20.4.237',
       '1.20.6': '20.6.119',
-      '1.21.1': '21.1.143',
+      '1.21.1': '21.1.169',
       '1.21.4': '21.4.47',
     };
     neoForgeVersion = neoForgeVersions[mcVersion] || '';
@@ -1662,7 +1662,7 @@ async function installNeoForge(serverDir: string, mcVersion: string, log: string
       const neoForgeVersions: Record<string, string> = {
         '1.20.1': '20.2.59',
         '1.20.4': '20.4.237',
-        '1.21.1': '21.1.143'
+        '1.21.1': '21.1.169'
       };
       
       if (neoForgeVersions[mcVersion]) {
