@@ -99,6 +99,7 @@ const CLIENT_SIDE_MODS = [
   'biomeinfo',
   'FPS-Monitor',
   'spongemixins',
+  'defaultserverlist',
   'debugify',
   'authme',
   'reauth',
