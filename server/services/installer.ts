@@ -681,18 +681,14 @@ async function processInstallation(
       });
     }
     
-    // Instala NeoForge se houver startserver.sh (instala sem iniciar)
-    const startScriptPath = path.join(serverDir, 'startserver.sh');
-    if (await fileExists(startScriptPath)) {
-      log.push(`[${new Date().toISOString()}] Instalando NeoForge via startserver.sh...`);
-      try {
-        await execAsync(`cd ${serverDir} && chmod +x startserver.sh && ATM10_INSTALL_ONLY=true ./startserver.sh`);
-        log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
-      } catch (e: any) {
-        log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar NeoForge: ${e?.message || e}`);
-      }
+    // Detecta loader, pré-instala se necessário, e atualiza startup no painel ANTES de ligar
+    try {
+      const mcVersion = await detectMinecraftVersion(serverDir, version);
+      await detectAndConfigureStartup(serverId, serverDir, mcVersion, version);
+    } catch (e: any) {
+      console.warn(`[Installer] Falha no detectAndConfigureStartup: ${e?.message || e}`);
     }
-    
+
     // Inicia servidor automaticamente
     log.push(`[${new Date().toISOString()}] Iniciando servidor...`);
     try {
@@ -720,13 +716,6 @@ async function processInstallation(
     }
   } finally {
     clearInterval(flushInterval);
-    // Detecta loader, pré-instala se necessário, e atualiza startup no painel
-    try {
-      const mcVersion = await detectMinecraftVersion(serverDir, version);
-      await detectAndConfigureStartup(serverId, serverDir, mcVersion, version);
-    } catch (e: any) {
-      console.warn(`[Installer] Falha no detectAndConfigureStartup no finally: ${e?.message || e}`);
-    }
   }
 }
 
