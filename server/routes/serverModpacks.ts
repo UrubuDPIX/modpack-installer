@@ -325,6 +325,14 @@ router.get('/:id/modpack/metadata', async (req, res) => {
         if (dbModpack?.source_id) {
           metadata.id = dbModpack.source_id;
         }
+        
+        // Inject versionId for accurate update checks
+        const dbVersion = await prisma.modpackVersion.findUnique({
+          where: { id: serverModpack.modpack_version_id }
+        });
+        if (dbVersion) {
+          metadata.versionId = String(dbVersion.version_id || dbVersion.id || '');
+        }
       }
       
       res.json(metadata);
@@ -345,6 +353,7 @@ router.get('/:id/modpack/metadata', async (req, res) => {
             id: modpack.source_id || String(modpack.id),
             name: modpack.name,
             version: version?.version || 'unknown',
+            versionId: String(version?.version_id || version?.id || ''),
             provider: modpack.source || 'unknown',
             loader: modpack.modloader || '',
             minecraftVersion: modpack.minecraft_version || '',

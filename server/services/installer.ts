@@ -20,6 +20,7 @@ async function saveModpackMetadata(serverDir: string, provider: string, modpack:
       id: modpack.id || modpack.slug || '',
       name: modpack.name || '',
       version: version.version || version.name || '',
+      versionId: String(version.version_id || version.id || ''),
       provider: provider,
       loader: version.loader || '',
       minecraftVersion: version.minecraftVersion || '',

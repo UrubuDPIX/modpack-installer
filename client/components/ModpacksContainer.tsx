@@ -161,8 +161,16 @@ export default function ModpacksContainer() {
       .then(versions => {
         if (versions && versions.length > 0) {
           const latest = versions[0];
-          // Consider it an update if the latest version name doesn't match the installed version name
-          if (latest.name !== installedModpack.version && latest.id !== installedModpack.version) {
+          
+          // Strict ID comparison to avoid false positives with Server Pack names
+          let hasUpdate = false;
+          if (installedModpack.versionId) {
+            hasUpdate = String(latest.id) !== String(installedModpack.versionId);
+          } else {
+            hasUpdate = (latest.name !== installedModpack.version && latest.id !== installedModpack.version);
+          }
+          
+          if (hasUpdate) {
             setUpdateAvailable(latest.name);
           } else {
             setUpdateAvailable(null);
