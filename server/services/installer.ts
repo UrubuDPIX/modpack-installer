@@ -255,16 +255,52 @@ async function processInstallation(
     
     // Download do modpack
     log.push(`[${new Date().toISOString()}] Baixando modpack...`);
-    log.push(`[${new Date().toISOString()}] URL: ${version.download_url || 'VAZIA'}`);
+    
+    let actualDownloadUrl = version.download_url;
+
+    if (version.modpack.provider === 'curseforge' && version.external_id && version.modpack.external_id) {
+      const cfKey = await getCurseForgeKey();
+      if (cfKey) {
+        log.push(`[${new Date().toISOString()}] [CurseForge] Verificando existencia de Server Pack oficial...`);
+        try {
+          const fileRes = await fetch(`https://api.curseforge.com/v1/mods/${version.modpack.external_id}/files/${version.external_id}`, {
+            headers: { 'x-api-key': cfKey }
+          });
+          if (fileRes.ok) {
+            const fileData = await fileRes.json() as any;
+            if (fileData?.data?.serverPackFileId) {
+              const serverPackId = fileData.data.serverPackFileId;
+              log.push(`[${new Date().toISOString()}] [CurseForge] Server Pack encontrado! (File ID: ${serverPackId})`);
+              const spRes = await fetch(`https://api.curseforge.com/v1/mods/${version.modpack.external_id}/files/${serverPackId}`, {
+                headers: { 'x-api-key': cfKey }
+              });
+              if (spRes.ok) {
+                const spData = await spRes.json() as any;
+                if (spData?.data?.downloadUrl) {
+                  actualDownloadUrl = spData.data.downloadUrl;
+                  log.push(`[${new Date().toISOString()}] [CurseForge] Usando URL do Server Pack oficial: ${actualDownloadUrl}`);
+                }
+              }
+            } else {
+              log.push(`[${new Date().toISOString()}] [CurseForge] Nenhum Server Pack associado a este arquivo. Usando Client Pack.`);
+            }
+          }
+        } catch (e) {
+          log.push(`[${new Date().toISOString()}] [CurseForge] Erro ao verificar Server Pack: ${e}`);
+        }
+      }
+    }
+
+    log.push(`[${new Date().toISOString()}] URL Final: ${actualDownloadUrl || 'VAZIA'}`);
     const downloadPath = path.join(serverDir, 'modpack.zip');
     
-    if (!version.download_url) {
+    if (!actualDownloadUrl) {
       log.push(`[${new Date().toISOString()}] ERRO: URL de download vazia!`);
       throw new Error('URL de download não disponível');
     }
     
     try {
-      await downloadFile(version.download_url, downloadPath);
+      await downloadFile(actualDownloadUrl, downloadPath);
     } catch (downloadErr: any) {
       log.push(`[${new Date().toISOString()}] ERRO: Falha no download do modpack: ${downloadErr.message}`);
       throw new Error(`Falha ao baixar modpack: ${downloadErr.message}`);
