@@ -1626,8 +1626,30 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
     }
   }
   }
-  
   log.push(`[${new Date().toISOString()}] Instalando Forge...`);
+  
+  // FIX FOR OLD FORGE INSTALLERS (like 1.7.10) THAT TRY TO DOWNLOAD FROM DEAD S3 LINKS
+  const vanillaJarPath = path.join(serverDir, `minecraft_server.${mcVersion}.jar`);
+  if (!await fileExists(vanillaJarPath)) {
+    log.push(`[${new Date().toISOString()}] Pre-baixando minecraft_server.${mcVersion}.jar para evitar falha do instalador antigo...`);
+    try {
+      const manifestRes = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
+      const manifest = await manifestRes.json() as any;
+      const versionInfo = manifest.versions.find((v: any) => v.id === mcVersion);
+      if (versionInfo) {
+        const versionJsonRes = await fetch(versionInfo.url);
+        const versionJson = await versionJsonRes.json() as any;
+        const serverUrl = versionJson.downloads?.server?.url;
+        if (serverUrl) {
+          await downloadFile(serverUrl, vanillaJarPath);
+          log.push(`[${new Date().toISOString()}] vanilla server.jar baixado com sucesso!`);
+        }
+      }
+    } catch (e: any) {
+      log.push(`[${new Date().toISOString()}] AVISO: Falha ao pré-baixar vanilla server.jar: ${e?.message || e}`);
+    }
+  }
+
   const javaImage = getJavaImageForVersion(mcVersion);
   await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${forgeInstaller} -installServer`, log);
   
