@@ -7,7 +7,10 @@ import https from 'https';
 import http from 'http';
 import { createWriteStream } from 'fs';
 
-const execAsync = promisify(exec);
+const _execAsync = promisify(exec);
+const execAsync = (cmd: string, options?: any) => {
+  return _execAsync(cmd, { maxBuffer: 1024 * 1024 * 100, ...options });
+};
 
 // Helper function to save modpack metadata for the frontend
 async function saveModpackMetadata(serverDir: string, provider: string, modpack: any, version: any) {
