@@ -128,6 +128,7 @@ export default function ModpacksContainer() {
   const [updateVersions, setUpdateVersions] = useState<any[]>([]);
   const [updateVersionId, setUpdateVersionId] = useState("");
   const [fetchingVersions, setFetchingVersions] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
 
   // Use ref to always have current provider in async callbacks
   const providerRef = useRef(provider);
@@ -149,6 +150,27 @@ export default function ModpacksContainer() {
       .then(data => setInstalledModpack(data))
       .catch(() => setInstalledModpack(null));
   }, [id]);
+
+  // Check for updates
+  useEffect(() => {
+    if (!installedModpack || !id) return;
+    
+    // Check if we need to fetch updates
+    fetch(`/api/client/servers/${id}/modpack/versions`)
+      .then(res => res.json())
+      .then(versions => {
+        if (versions && versions.length > 0) {
+          const latest = versions[0];
+          // Consider it an update if the latest version name doesn't match the installed version name
+          if (latest.name !== installedModpack.version && latest.id !== installedModpack.version) {
+            setUpdateAvailable(latest.name);
+          } else {
+            setUpdateAvailable(null);
+          }
+        }
+      })
+      .catch(() => setUpdateAvailable(null));
+  }, [installedModpack, id]);
 
   // Busca CurseForge automaticamente quando a chave é carregada
   useEffect(() => {
@@ -662,11 +684,24 @@ export default function ModpacksContainer() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  border: 'none'
+                  border: 'none',
+                  position: 'relative'
                 }}
                 className="hover:bg-indigo-500"
               >
-                <FontAwesomeIcon icon={faCog} /> Change Version
+                {updateAvailable && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    width: '12px',
+                    height: '12px',
+                    background: '#EF4444',
+                    borderRadius: '50%',
+                    border: '2px solid #1A1C23'
+                  }} />
+                )}
+                <FontAwesomeIcon icon={faCog} /> {updateAvailable ? 'Update Available' : 'Change Version'}
               </button>
             </div>
           </div>
@@ -675,6 +710,19 @@ export default function ModpacksContainer() {
             {installedModpack.version && (
               <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <FontAwesomeIcon icon={faBox} style={{ opacity: 0.7 }} /> {installedModpack.name} - {installedModpack.version}
+                {updateAvailable && (
+                  <span style={{
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#EF4444',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    marginLeft: '8px'
+                  }}>
+                    New: {updateAvailable}
+                  </span>
+                )}
               </span>
             )}
             {installedModpack.installedAt && (
