@@ -1276,10 +1276,9 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
     }
   }
 
-  // --- ETAPA 4: Cria auto-install.sh como wrapper se necessário ---
-  if (installerJar || files.includes('LaunchServer.sh') || files.includes('ServerStart.sh') || files.includes('Install.sh')) {
-    console.log(`[Detector] Criando auto-install.sh para o modpack...`);
-    const wrapperScript = `#!/bin/bash
+  // --- ETAPA 4: Cria auto-install.sh como wrapper SEMPRE ---
+  console.log(`[Detector] Criando auto-install.sh para o modpack...`);
+  const wrapperScript = `#!/bin/bash
 INSTALLER_JAR="${installerJar || ''}"
 LOG_FILE="installer.log"
 
@@ -1318,7 +1317,7 @@ if [ -n "$INSTALLER_JAR" ]; then
       curl -fsSL "https://maven.minecraftforge.net/net/minecraftforge/forge/1.12.2-14.23.5.2860/forge-1.12.2-14.23.5.2860-installer.jar" -o "forge-fix-installer.jar"
       java -jar "forge-fix-installer.jar" -installServer > "$LOG_FILE" 2>&1
       # Renomear para a versao antiga esperada pelo LaunchServer.sh
-      OLD_VER=$(echo "$INSTALLER_JAR" | grep -oE '14\.23\.5\.[0-9]+' | head -1)
+      OLD_VER=$(echo "$INSTALLER_JAR" | grep -oE '14\\.23\\.5\\.[0-9]+' | head -1)
       if [ -n "$OLD_VER" ]; then
         if [ -f "forge-1.12.2-14.23.5.2860-universal.jar" ]; then
           cp "forge-1.12.2-14.23.5.2860-universal.jar" "forge-1.12.2-$OLD_VER-universal.jar"
@@ -1359,7 +1358,6 @@ fi
     await fs.writeFile(path.join(serverDir, 'auto-install.sh'), wrapperScript, 'utf-8');
     await execAsync(`chmod +x ${path.join(serverDir, 'auto-install.sh')}`);
     startupCommand = 'bash auto-install.sh';
-  }
 
   // --- ETAPA 5: Se ainda não tem startup, falha com erro claro ---
   if (!startupCommand) {
