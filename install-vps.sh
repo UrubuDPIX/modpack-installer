@@ -679,7 +679,7 @@ EOF
     
     # Compila TypeScript
     print_info "Compilando backend..."
-    (cd "$blueprint_dir" && npx tsc --project tsconfig.json 2>&1) | tail -n 10 || {
+    (cd "$blueprint_dir" && ./node_modules/.bin/tsc --project tsconfig.json 2>&1) | tail -n 10 || {
         print_warning "Compilação TypeScript teve erros, tentando continuar..."
     }
     
