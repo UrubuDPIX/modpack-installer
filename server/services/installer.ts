@@ -331,13 +331,13 @@ async function processInstallation(
     if (topLevelDirs.length === 1) {
       const singleDir = topLevelDirs[0];
       log.push(`[${new Date().toISOString()}] Movendo arquivos de ${singleDir}/ para raiz...`);
-      await execAsync(`cd ${serverDir} && cp -r ${singleDir}/* . && rm -rf ${singleDir}`);
+      await execAsync(`cd "${serverDir}" && cp -r "${singleDir}/"* . && rm -rf "${singleDir}"`);
     }
     
     // Move arquivos do server pack se existir
     const overridesDir = path.join(serverDir, 'overrides');
     if (await directoryExists(overridesDir)) {
-      await execAsync(`cp -r ${overridesDir}/* ${serverDir}/ && rm -rf ${overridesDir}`);
+      await execAsync(`cp -r "${overridesDir}/"* "${serverDir}/" && rm -rf "${overridesDir}"`);
     }
     
     // Detecta se é um Server Pack (já vem com mods, configs e instalador)
