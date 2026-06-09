@@ -1414,16 +1414,16 @@ fi
 
 async function detectMinecraftVersion(serverDir: string, version: any): Promise<string> {
   // 1. Tenta usar versao do banco de dados (relação modpack ou propriedades diretas)
-  if (version.modpack?.minecraft_version) {
+  if (version.modpack?.minecraft_version && version.modpack.minecraft_version !== 'unknown') {
     return version.modpack.minecraft_version;
   }
-  if (version.modpack?.minecraftVersion) {
+  if (version.modpack?.minecraftVersion && version.modpack.minecraftVersion !== 'unknown') {
     return version.modpack.minecraftVersion;
   }
-  if (version.minecraft_version) {
+  if (version.minecraft_version && version.minecraft_version !== 'unknown') {
     return version.minecraft_version;
   }
-  if (version.minecraftVersion) {
+  if (version.minecraftVersion && version.minecraftVersion !== 'unknown') {
     return version.minecraftVersion;
   }
   
@@ -1842,7 +1842,20 @@ async function autoDetectModloader(serverDir: string, version: any, log: string[
   
   let loader: 'Forge' | 'Fabric' | 'NeoForge' | 'Vanilla' = 'Vanilla';
   let loaderVersion = '';
-  let minecraftVersion = version?.modpack?.minecraft_version || version?.minecraft_version || version?.minecraftVersion || version?.modpack?.minecraftVersion || '';
+  let minecraftVersion = '';
+
+  const possibleMcVersions = [
+    version?.modpack?.minecraft_version,
+    version?.minecraft_version,
+    version?.minecraftVersion,
+    version?.modpack?.minecraftVersion
+  ];
+  for (const v of possibleMcVersions) {
+    if (v && v !== 'unknown') {
+      minecraftVersion = v;
+      break;
+    }
+  }
 
   // 1. Verifica manifest.json (CurseForge Pack)
   try {
@@ -1919,6 +1932,7 @@ async function autoDetectModloader(serverDir: string, version: any, log: string[
     if (nfInstaller) {
       loader = 'NeoForge';
       loaderVersion = nfInstaller.replace(/^neoforge-/i, '').replace(/-installer\.jar$/i, '');
+      if (!minecraftVersion && loaderVersion.includes('-')) minecraftVersion = loaderVersion.split('-')[0];
       log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado instalador NeoForge: ${nfInstaller}`);
       return { loader, loaderVersion, minecraftVersion };
     }
@@ -1928,6 +1942,7 @@ async function autoDetectModloader(serverDir: string, version: any, log: string[
     if (forgeInstaller) {
       loader = 'Forge';
       loaderVersion = forgeInstaller.replace(/^forge-/i, '').replace(/-installer\.jar$/i, '');
+      if (!minecraftVersion && loaderVersion.includes('-')) minecraftVersion = loaderVersion.split('-')[0];
       log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado instalador Forge: ${forgeInstaller}`);
       return { loader, loaderVersion, minecraftVersion };
     }
@@ -1937,6 +1952,7 @@ async function autoDetectModloader(serverDir: string, version: any, log: string[
     if (forgeJar) {
       loader = 'Forge';
       loaderVersion = forgeJar.replace(/^forge-/i, '').replace(/\.jar$/i, '');
+      if (!minecraftVersion && loaderVersion.includes('-')) minecraftVersion = loaderVersion.split('-')[0];
       log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado jar executável do Forge: ${forgeJar}`);
       return { loader, loaderVersion, minecraftVersion };
     }
