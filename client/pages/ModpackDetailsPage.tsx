@@ -427,6 +427,11 @@ export default function ModpackDetailsPage() {
                           {formatDownloads(v.downloads)} downloads · Published {timeAgo(v.date_published)}
                         </p>
                         <div className="flex flex-wrap gap-1.5 mt-2">
+                          {v.isServerPack && (
+                            <span className="bg-green-900/50 text-green-400 border border-green-700/50 px-2 py-0.5 rounded text-[10px] uppercase tracking-wide whitespace-nowrap" title="Possui Server Pack Oficial">
+                              Server Pack ✓
+                            </span>
+                          )}
                           {(v.loaders || []).slice(0, 2).map((l: string) => (
                             <span key={l} className="bg-gray-700/50 text-gray-300 px-2 py-0.5 rounded text-[10px] capitalize">{l}</span>
                           ))}
