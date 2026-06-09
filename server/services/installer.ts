@@ -1542,6 +1542,7 @@ async function installForge(serverDir: string, mcVersion: string, log: string[],
     // Se nao detectou do manifest, usa mapeamento
     if (!forgeVersion) {
       const forgeVersions: Record<string, string> = {
+        '1.7.10': '1.7.10-10.13.4.1614',
         '1.12.2': '1.12.2-14.23.5.2859',
         '1.16.4': '1.16.4-35.1.37',
         '1.16.5': '1.16.5-36.2.39',
