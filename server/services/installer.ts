@@ -1267,7 +1267,6 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
 
     // --- ETAPA 4: Cria auto-install.sh como wrapper SEMPRE ---
     console.log(`[Detector] Criando auto-install.sh para o modpack...`);
-    await fs.writeFile(path.join(serverDir, 'URUBURESPONDE.txt'), 'Chegou na etapa 4! O codigo novo ta rodando!', 'utf-8');
     
     const wrapperScript = `#!/bin/bash
 INSTALLER_JAR="${installerJar || ''}"
