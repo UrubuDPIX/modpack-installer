@@ -31,6 +31,7 @@ interface ModpackVersion {
   date_published: string;
   downloads: number;
   version_type: string;
+  isServerPack?: boolean;
   files?: any[];
 }
 
