@@ -1968,6 +1968,27 @@ async function autoDetectModloader(serverDir: string, version: any, log: string[
       log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado arquivos Fabric no diretório`);
       return { loader, loaderVersion, minecraftVersion };
     }
+    
+    // Fallback: Analisar scripts startserver.sh ou startserver.bat (ex: ATM 7)
+    const scriptFiles = ['startserver.sh', 'startserver.bat', 'run.sh', 'run.bat'];
+    for (const script of scriptFiles) {
+      if (files.includes(script)) {
+        const scriptPath = path.join(serverDir, script);
+        const scriptContent = await fs.readFile(scriptPath, 'utf-8');
+        
+        // Ex: FORGE_VERSION=40.2.17
+        const forgeMatch = scriptContent.match(/FORGE_VERSION=([0-9\.]+)/i);
+        if (forgeMatch) {
+          loader = 'Forge';
+          loaderVersion = forgeMatch[1];
+          // Ex: INSTALLER="forge-1.18.2-$FORGE_VERSION-installer.jar"
+          const mcMatch = scriptContent.match(/forge-([0-9\.]+)-\$FORGE_VERSION/i);
+          if (mcMatch && !minecraftVersion) minecraftVersion = mcMatch[1];
+          log.push(`[${new Date().toISOString()}] [Auto-Detector] Versão do Forge detectada no ${script}: ${loaderVersion}`);
+          return { loader, loaderVersion, minecraftVersion };
+        }
+      }
+    }
   } catch (e: any) {
     log.push(`[${new Date().toISOString()}] [Auto-Detector] Aviso ao ler diretório do servidor: ${e.message}`);
   }
