@@ -1,0 +1,1880 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.installModpack = installModpack;
+exports.uninstallModpack = uninstallModpack;
+const index_1 = require("../index");
+const child_process_1 = require("child_process");
+const util_1 = require("util");
+const path_1 = __importDefault(require("path"));
+const promises_1 = __importDefault(require("fs/promises"));
+const https_1 = __importDefault(require("https"));
+const http_1 = __importDefault(require("http"));
+const fs_1 = require("fs");
+const _execAsync = (0, util_1.promisify)(child_process_1.exec);
+const execAsync = (cmd, options) => {
+    return _execAsync(cmd, { maxBuffer: 1024 * 1024 * 100, ...options });
+};
+// Helper function to save modpack metadata for the frontend
+async function saveModpackMetadata(serverDir, provider, modpack, version) {
+    try {
+        const metadataPath = path_1.default.join(serverDir, '.modpack_metadata.json');
+        const metadata = {
+            id: modpack.id || modpack.slug || '',
+            name: modpack.name || '',
+            version: version.version || version.name || '',
+            provider: provider,
+            loader: version.loader || '',
+            minecraftVersion: version.minecraftVersion || '',
+            icon: modpack.icon_url || modpack.logo_url || modpack.icon || '',
+            description: modpack.description || modpack.summary || '',
+            installedAt: new Date().toISOString()
+        };
+        await promises_1.default.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
+        // Ensure Pterodactyl user can read it
+        await execAsync(`chown 999:999 ${metadataPath} 2>/dev/null || chown pterodactyl:pterodactyl ${metadataPath} 2>/dev/null || true`);
+    }
+    catch (e) {
+        console.error('[Metadata] Falha ao salvar .modpack_metadata.json:', e);
+    }
+}
+// Lista manual de mods client-side (nomes de arquivos que devem ser ignorados/deletados)
+// Você pode adicionar mais itens aqui conforme necessário para bloquear mods visuais no servidor.
+// Esta lista substitui a checagem por categorias do CurseForge.
+const CLIENT_SIDE_MODS = [
+    'colorwheel_patcher',
+    'colorwheel',
+    'replaymod',
+    'iris',
+    'sodium',
+    'zoom',
+    'journeymap',
+    'xaero',
+    'optifine',
+    'optifabric',
+    'appleskin',
+    'litematica',
+    'minihud',
+    'tweakeroo',
+    'itemscroller',
+    'wdl',
+    'worlddownloader',
+    'nvidium',
+    'moreculling',
+    'entityculling',
+    'betterfps',
+    'foamfix',
+    'texfix',
+    'vanillaenhancements',
+    'rubidium',
+    'oculus',
+    'dashloader',
+    'fancymenu',
+    'drippyloadingscreen',
+    'custommainmenu',
+    'defaultoptions',
+    'controlling',
+    'mouseweelie',
+    'dynamiclights',
+    'shulkerboxtooltip',
+    'notenoughanimations',
+    'firstperson',
+    '3dskinlayers',
+    'voxelmap',
+    'antiqueatlas',
+    'craftpresence',
+    'discordrpc',
+    'lambdynlights',
+    'okzoomer',
+    // NOTA: JEI, REI (roughlyenoughitems) e EMI têm funcionalidades server-side e são dependências obrigatórias
+    'modmenu',
+    'neat',
+    'torohealth',
+    'damageindicators',
+    'armorhud',
+    'durabilityviewer',
+    'inventoryhud',
+    'itemphysic',
+    'soundfilters',
+    'soundphysics',
+    'dynamic surroundings',
+    'ambientsounds',
+    'biomeinfo',
+    'FPS-Monitor',
+    'spongemixins',
+    'defaultserverlist',
+    'debugify',
+    'authme',
+    'reauth',
+    'tlauncher',
+    'tl_skin',
+    'waveycapes',
+    'capes',
+    'cosmetic',
+    'skin',
+    '3dskin',
+    'citresewn',
+    'continuity',
+    'enhancedblockentities',
+    'entitytexturefeatures',
+    'fallingleaves',
+    'visuality',
+    'clear-skies',
+    'custom-splash-screen',
+    'melody',
+    'loadmyresources',
+    'respackopts',
+    'rrls',
+    'remove-reloading-screen',
+    'smoke-suppression',
+    'smooth-boot',
+    'sparkweave'
+];
+async function installModpack(serverId, modpackId, versionId, action, deleteFiles = true) {
+    // Busca dados do modpack e versão
+    const version = await index_1.prisma.modpackVersion.findUnique({
+        where: { id: BigInt(versionId) },
+        include: { modpack: true }
+    });
+    if (!version) {
+        throw new Error('Versão não encontrada');
+    }
+    // Converte IDs de forma segura
+    const modpackIdNum = !isNaN(Number(modpackId)) ? BigInt(modpackId) : BigInt(0);
+    const versionIdNum = !isNaN(Number(versionId)) ? BigInt(versionId) : BigInt(0);
+    // Limpa instalação anterior
+    await index_1.prisma.serverModpack.deleteMany({
+        where: { server_id: serverId }
+    });
+    // Cria novo registro
+    const serverModpack = await index_1.prisma.serverModpack.create({
+        data: {
+            server_id: serverId,
+            modpack_id: modpackIdNum,
+            modpack_version_id: versionIdNum,
+            status: 'installing',
+            installed_at: new Date(),
+            created_at: new Date(),
+            updated_at: new Date()
+        }
+    });
+    // Inicia instalação em background
+    processInstallation(serverId, version, deleteFiles).catch(console.error);
+    return { jobId: String(serverModpack.id) };
+}
+async function processInstallation(serverId, version, deleteFiles = true) {
+    const log = [];
+    const originalPush = log.push;
+    log.push = function (...args) {
+        for (const arg of args) {
+            console.log(arg);
+        }
+        return originalPush.apply(log, args);
+    };
+    // Encontra o registro no banco para atualizar log periodicamente
+    const serverModpack = await index_1.prisma.serverModpack.findFirst({
+        where: { server_id: serverId }
+    });
+    // Flush periódico do log a cada 5 segundos
+    const flushInterval = setInterval(async () => {
+        if (serverModpack && log.length > 0) {
+            try {
+                await index_1.prisma.serverModpack.update({
+                    where: { id: serverModpack.id },
+                    data: {
+                        install_log: getTruncatedLog(log),
+                        updated_at: new Date()
+                    }
+                });
+            }
+            catch (e) {
+                // Silencia erros de flush periódico
+            }
+        }
+    }, 5000);
+    // Diretório do servidor (exemplo - ajustar conforme estrutura Jexactyl)
+    const serverDir = `/var/lib/pterodactyl/volumes/${serverId}`;
+    // Pastas que NUNCA devem ser apagadas numa atualização
+    const PRESERVED_DIRS = ['world', 'world_nether', 'world_the_end', 'logs', 'playerdata', 'crash-reports', 'local', 'backups'];
+    // Arquivos/pastas que SÃO seguros de limpar numa atualização
+    const UPDATE_CLEANUP = ['mods', 'libraries', 'config', 'coremods', 'defaultconfigs', 'kubejs', 'scripts', 'server.jar', 'user_jvm_args.txt', 'run.sh', 'run.bat'];
+    try {
+        log.push(`[${new Date().toISOString()}] Iniciando instalação: ${version.modpack.name} ${version.version}`);
+        log.push(`[${new Date().toISOString()}] Modo: ${deleteFiles ? 'Instalação Completa (apagar tudo)' : 'Atualização (preservar mundo e dados)'}`);
+        // Cria diretório se não existir
+        await promises_1.default.mkdir(serverDir, { recursive: true });
+        if (deleteFiles) {
+            // INSTALAÇÃO COMPLETA: limpa tudo
+            log.push(`[${new Date().toISOString()}] Limpando diretório do servidor...`);
+            try {
+                await cleanServerDir(serverDir);
+                log.push(`[${new Date().toISOString()}] Diretório limpo com sucesso`);
+            }
+            catch (e) {
+                log.push(`[${new Date().toISOString()}] AVISO: Falha ao limpar diretório: ${e?.message || e}`);
+            }
+            await cleanServerDirectory(serverDir);
+        }
+        else {
+            // ATUALIZAÇÃO: remove APENAS arquivos de mods/loader, preserva mundo e dados
+            log.push(`[${new Date().toISOString()}] Modo atualização: removendo apenas mods e configurações antigas...`);
+            for (const target of UPDATE_CLEANUP) {
+                const targetPath = path_1.default.join(serverDir, target);
+                try {
+                    await promises_1.default.rm(targetPath, { recursive: true, force: true });
+                    log.push(`[${new Date().toISOString()}] Removido: ${target}`);
+                }
+                catch (e) {
+                    // ignora se não existir
+                }
+            }
+            log.push(`[${new Date().toISOString()}] Preservados: ${PRESERVED_DIRS.join(', ')}`);
+        }
+        // Download do modpack
+        log.push(`[${new Date().toISOString()}] Baixando modpack...`);
+        let actualDownloadUrl = version.download_url;
+        if (version.modpack.provider === 'curseforge' && version.external_id && version.modpack.external_id) {
+            const cfKey = await getCurseForgeKey();
+            if (cfKey) {
+                log.push(`[${new Date().toISOString()}] [CurseForge] Verificando existencia de Server Pack oficial...`);
+                try {
+                    const fileRes = await fetch(`https://api.curseforge.com/v1/mods/${version.modpack.external_id}/files/${version.external_id}`, {
+                        headers: { 'x-api-key': cfKey }
+                    });
+                    if (fileRes.ok) {
+                        const fileData = await fileRes.json();
+                        if (fileData?.data?.serverPackFileId) {
+                            const serverPackId = fileData.data.serverPackFileId;
+                            log.push(`[${new Date().toISOString()}] [CurseForge] Server Pack encontrado! (File ID: ${serverPackId})`);
+                            const spRes = await fetch(`https://api.curseforge.com/v1/mods/${version.modpack.external_id}/files/${serverPackId}`, {
+                                headers: { 'x-api-key': cfKey }
+                            });
+                            if (spRes.ok) {
+                                const spData = await spRes.json();
+                                if (spData?.data?.downloadUrl) {
+                                    actualDownloadUrl = spData.data.downloadUrl;
+                                    log.push(`[${new Date().toISOString()}] [CurseForge] Usando URL do Server Pack oficial: ${actualDownloadUrl}`);
+                                }
+                            }
+                        }
+                        else {
+                            log.push(`[${new Date().toISOString()}] [CurseForge] Nenhum Server Pack associado a este arquivo. Usando Client Pack.`);
+                        }
+                    }
+                }
+                catch (e) {
+                    log.push(`[${new Date().toISOString()}] [CurseForge] Erro ao verificar Server Pack: ${e}`);
+                }
+            }
+        }
+        log.push(`[${new Date().toISOString()}] URL Final: ${actualDownloadUrl || 'VAZIA'}`);
+        const downloadPath = path_1.default.join(serverDir, 'modpack.zip');
+        if (!actualDownloadUrl) {
+            log.push(`[${new Date().toISOString()}] ERRO: URL de download vazia!`);
+            throw new Error('URL de download não disponível');
+        }
+        try {
+            await downloadFile(actualDownloadUrl, downloadPath);
+        }
+        catch (downloadErr) {
+            log.push(`[${new Date().toISOString()}] ERRO: Falha no download do modpack: ${downloadErr.message}`);
+            throw new Error(`Falha ao baixar modpack: ${downloadErr.message}`);
+        }
+        // Verifica se o arquivo foi baixado
+        const stats = await promises_1.default.stat(downloadPath).catch(() => null);
+        if (!stats || stats.size === 0) {
+            log.push(`[${new Date().toISOString()}] ERRO: Arquivo baixado está vazio!`);
+            throw new Error('Arquivo de modpack vazio');
+        }
+        log.push(`[${new Date().toISOString()}] Download concluído: ${stats.size} bytes`);
+        // Extrai modpack
+        log.push(`[${new Date().toISOString()}] Extraindo arquivos...`);
+        await execAsync(`cd ${serverDir} && unzip -o modpack.zip && rm modpack.zip`);
+        // Se o ZIP extraiu tudo para uma única subpasta (ex: StoneBlock-1.0.36/), move para raiz
+        const extractedEntries = await promises_1.default.readdir(serverDir);
+        const topLevelDirs = [];
+        for (const entry of extractedEntries) {
+            const entryPath = path_1.default.join(serverDir, entry);
+            const stat = await promises_1.default.stat(entryPath).catch(() => null);
+            if (stat?.isDirectory() && entry !== 'world' && entry !== 'world_backup') {
+                topLevelDirs.push(entry);
+            }
+        }
+        if (topLevelDirs.length === 1) {
+            const singleDir = topLevelDirs[0];
+            log.push(`[${new Date().toISOString()}] Movendo arquivos de ${singleDir}/ para raiz...`);
+            await execAsync(`cd ${serverDir} && cp -r ${singleDir}/* . && rm -rf ${singleDir}`);
+        }
+        // Move arquivos do server pack se existir
+        const overridesDir = path_1.default.join(serverDir, 'overrides');
+        if (await directoryExists(overridesDir)) {
+            await execAsync(`cp -r ${overridesDir}/* ${serverDir}/ && rm -rf ${overridesDir}`);
+        }
+        // Detecta se é um Server Pack (já vem com mods, configs e instalador)
+        const hasModsDir = await directoryExists(path_1.default.join(serverDir, 'mods'));
+        const hasConfigDir = await directoryExists(path_1.default.join(serverDir, 'config'));
+        const hasForgeInstaller = (await promises_1.default.readdir(serverDir).catch(() => [])).some((f) => f.startsWith('forge-') && f.endsWith('-installer.jar'));
+        const hasNeoForgeInstaller = (await promises_1.default.readdir(serverDir).catch(() => [])).some((f) => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+        const isServerPack = hasModsDir && (hasForgeInstaller || hasNeoForgeInstaller);
+        // Pré-instala Forge/NeoForge no backend com Docker (tem internet) - SEMPRE que houver installer
+        const javaImage = getJavaImageForVersion(await detectMinecraftVersion(serverDir, version));
+        if (hasForgeInstaller) {
+            const installerJar = (await promises_1.default.readdir(serverDir)).find((f) => f.startsWith('forge-') && f.endsWith('-installer.jar'));
+            if (installerJar) {
+                const serverJar = installerJar.replace('-installer.jar', '.jar');
+                if (!await fileExists(path_1.default.join(serverDir, serverJar)) || !await directoryExists(path_1.default.join(serverDir, 'libraries'))) {
+                    log.push(`[${new Date().toISOString()}] Pre-instalando Forge com Docker...`);
+                    try {
+                        await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`);
+                        log.push(`[${new Date().toISOString()}] Forge pre-instalado com sucesso`);
+                    }
+                    catch (e) {
+                        log.push(`[${new Date().toISOString()}] AVISO: Pre-instalação falhou: ${e?.message || e}`);
+                    }
+                }
+                else {
+                    log.push(`[${new Date().toISOString()}] Forge já está instalado`);
+                }
+            }
+        }
+        if (hasNeoForgeInstaller) {
+            const installerJar = (await promises_1.default.readdir(serverDir)).find((f) => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+            if (installerJar) {
+                if (!await directoryExists(path_1.default.join(serverDir, 'libraries'))) {
+                    log.push(`[${new Date().toISOString()}] Pre-instalando NeoForge com Docker...`);
+                    try {
+                        await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`);
+                        log.push(`[${new Date().toISOString()}] NeoForge pre-instalado com sucesso`);
+                    }
+                    catch (e) {
+                        log.push(`[${new Date().toISOString()}] AVISO: Pre-instalação falhou: ${e?.message || e}`);
+                    }
+                }
+            }
+        }
+        if (isServerPack) {
+            log.push(`[${new Date().toISOString()}] Server Pack detectado! Pulando download de mods individuais.`);
+        }
+        else {
+            // Baixa mods do modrinth.index.json (funciona para QUALQUER modloader)
+            log.push(`[${new Date().toISOString()}] Verificando modrinth.index.json...`);
+            await downloadModrinthMods(serverDir);
+        }
+        // Auto-detecta o modloader (Forge, NeoForge, Fabric) do modpack
+        const detected = await autoDetectModloader(serverDir, version, log);
+        // Atualiza os metadados dinamicamente para as etapas seguintes do instalador
+        version.loader = detected.loader;
+        if (detected.loaderVersion) {
+            version.loaderVersion = detected.loaderVersion;
+        }
+        if (detected.minecraftVersion) {
+            version.minecraftVersion = detected.minecraftVersion;
+        }
+        // Se há um instalador local pré-baixado (Server Pack), executa-o com prioridade máxima
+        const localNeoForgeInstaller = (await promises_1.default.readdir(serverDir)).find((f) => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+        const localForgeInstaller = (await promises_1.default.readdir(serverDir)).find((f) => f.startsWith('forge-') && f.endsWith('-installer.jar'));
+        if (localNeoForgeInstaller) {
+            log.push(`[${new Date().toISOString()}] Executando instalador local do NeoForge (${localNeoForgeInstaller}) via Docker...`);
+            try {
+                const javaImage = getJavaImageForVersion(detected.minecraftVersion);
+                await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${localNeoForgeInstaller} -installServer`, log);
+                log.push(`[${new Date().toISOString()}] NeoForge local instalado com sucesso`);
+            }
+            catch (e) {
+                log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar NeoForge local: ${e?.message || e}`);
+            }
+        }
+        else if (localForgeInstaller) {
+            log.push(`[${new Date().toISOString()}] Executando instalador local do Forge (${localForgeInstaller}) via Docker...`);
+            try {
+                const javaImage = getJavaImageForVersion(detected.minecraftVersion);
+                await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${localForgeInstaller} -installServer`, log);
+                log.push(`[${new Date().toISOString()}] Forge local instalado com sucesso`);
+            }
+            catch (e) {
+                log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar Forge local: ${e?.message || e}`);
+            }
+        }
+        else {
+            // Se não há instaladores locais, usa nossa auto-detecção para baixar e instalar remotamente!
+            const librariesPath = path_1.default.join(serverDir, 'libraries');
+            const hasLibraries = await directoryExists(librariesPath) && (await promises_1.default.readdir(librariesPath).catch(() => [])).length > 0;
+            if (detected.loader === 'NeoForge') {
+                const hasNeoForgeJar = (await promises_1.default.readdir(serverDir)).some((f) => f.startsWith('neoforge-') && !f.includes('-installer'));
+                if (!hasNeoForgeJar || !hasLibraries) {
+                    log.push(`[${new Date().toISOString()}] NeoForge detectado mas incompleto (jar ou libraries faltando), iniciando instalação...`);
+                    await installNeoForge(serverDir, detected.minecraftVersion, log, detected.loaderVersion);
+                }
+            }
+            else if (detected.loader === 'Forge') {
+                const hasForgeJar = (await promises_1.default.readdir(serverDir)).some((f) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+                if (!hasForgeJar || !hasLibraries) {
+                    log.push(`[${new Date().toISOString()}] Forge detectado mas incompleto (jar ou libraries faltando), iniciando instalação...`);
+                    await installForge(serverDir, detected.minecraftVersion, log, detected.loaderVersion);
+                }
+            }
+            else if (detected.loader === 'Fabric') {
+                const hasFabricJar = await fileExists(path_1.default.join(serverDir, 'server.jar'));
+                if (!hasFabricJar) {
+                    log.push(`[${new Date().toISOString()}] Fabric detectado mas server.jar não encontrado, baixando Fabric server jar...`);
+                }
+                else {
+                    log.push(`[${new Date().toISOString()}] Fabric detectado, verificando mods e configurações...`);
+                }
+                await configureFabric(serverDir, { ...version, minecraftVersion: detected.minecraftVersion, loaderVersion: detected.loaderVersion });
+            }
+        }
+        // Se tiver manifest.json (CurseForge), baixa mods individualmente
+        const manifestPath = path_1.default.join(serverDir, 'manifest.json');
+        const modsDir = path_1.default.join(serverDir, 'mods');
+        if (await fileExists(manifestPath)) {
+            log.push(`[${new Date().toISOString()}] Detectado manifest.json, processando downloads de mods...`);
+            try {
+                const manifestContent = await promises_1.default.readFile(manifestPath, 'utf-8');
+                const manifest = JSON.parse(manifestContent);
+                if (manifest.files && Array.isArray(manifest.files)) {
+                    await promises_1.default.mkdir(modsDir, { recursive: true });
+                    const cfKey = await getCurseForgeKey();
+                    let cfLoaderType = 0;
+                    const detLoader = String(detected.loader);
+                    const verLoader = String(version.loader);
+                    if (verLoader === 'Forge' || detLoader === 'Forge')
+                        cfLoaderType = 1;
+                    else if (verLoader === 'Fabric' || detLoader === 'Fabric')
+                        cfLoaderType = 4;
+                    else if (verLoader === 'Quilt' || detLoader === 'Quilt')
+                        cfLoaderType = 5;
+                    else if (verLoader === 'NeoForge' || detLoader === 'NeoForge')
+                        cfLoaderType = 6;
+                    const mcVer = version.minecraftVersion || detected.minecraftVersion || '';
+                    const downloadQueue = [...manifest.files];
+                    const processedMods = new Set();
+                    let downloadedCount = 0;
+                    while (downloadQueue.length > 0) {
+                        const modInfo = downloadQueue.shift();
+                        if (!modInfo || !modInfo.projectID)
+                            continue;
+                        // Evita loops infinitos ou downloads duplicados
+                        if (processedMods.has(modInfo.projectID))
+                            continue;
+                        try {
+                            let currentFileId = modInfo.fileID;
+                            // Se não tiver fileID (caso de dependência descoberta dinamicamente), busca na API
+                            if (!currentFileId && cfKey && mcVer) {
+                                log.push(`[${new Date().toISOString()}] [CurseForge] Resolvendo arquivo mais recente para dependência (modId: ${modInfo.projectID})...`);
+                                const filesRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files?gameVersion=${mcVer}&modLoaderType=${cfLoaderType}`, {
+                                    headers: { 'x-api-key': cfKey }
+                                });
+                                if (filesRes.ok) {
+                                    const filesData = await filesRes.json();
+                                    if (filesData.data && filesData.data.length > 0) {
+                                        currentFileId = filesData.data[0].id;
+                                        log.push(`[${new Date().toISOString()}] [CurseForge] Resolvido para fileID: ${currentFileId}`);
+                                    }
+                                }
+                            }
+                            if (!currentFileId) {
+                                log.push(`[${new Date().toISOString()}] [CurseForge] AVISO: Não foi possível determinar o fileID para modId ${modInfo.projectID}`);
+                                continue;
+                            }
+                            // Marca como processado
+                            processedMods.add(modInfo.projectID);
+                            let modDownloadUrl = '';
+                            let modFileName = `${modInfo.projectID}_${currentFileId}.jar`;
+                            let fileDependencies = [];
+                            if (cfKey) {
+                                try {
+                                    // Busca dados do ARQUIVO para obter nome correto, URL e DEPENDÊNCIAS
+                                    log.push(`[${new Date().toISOString()}] [CurseForge] Buscando arquivo ${modInfo.projectID}/${currentFileId}...`);
+                                    const fileDataRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${currentFileId}`, {
+                                        headers: { 'x-api-key': cfKey }
+                                    });
+                                    log.push(`[${new Date().toISOString()}] [CurseForge] API status: ${fileDataRes.status}`);
+                                    if (fileDataRes.ok) {
+                                        const fileData = await fileDataRes.json();
+                                        const fileInfo = fileData.data;
+                                        modFileName = fileInfo.fileName || modFileName;
+                                        log.push(`[${new Date().toISOString()}] [CurseForge] fileName: ${fileInfo.fileName || 'N/A'}, downloadUrl: ${fileInfo.downloadUrl ? 'SIM' : 'N/A'}`);
+                                        if (fileInfo.downloadUrl) {
+                                            modDownloadUrl = fileInfo.downloadUrl;
+                                        }
+                                        if (fileInfo.dependencies && Array.isArray(fileInfo.dependencies)) {
+                                            fileDependencies = fileInfo.dependencies;
+                                        }
+                                    }
+                                    // Se não tem downloadUrl, tenta endpoint /download
+                                    if (!modDownloadUrl) {
+                                        log.push(`[${new Date().toISOString()}] [CurseForge] Tentando endpoint /download...`);
+                                        const modDownloadRes = await fetch(`https://api.curseforge.com/v1/mods/${modInfo.projectID}/files/${currentFileId}/download`, {
+                                            headers: { 'x-api-key': cfKey }
+                                        });
+                                        log.push(`[${new Date().toISOString()}] [CurseForge] /download status: ${modDownloadRes.status}`);
+                                        if (modDownloadRes.ok) {
+                                            const modDownloadData = await modDownloadRes.json();
+                                            modDownloadUrl = modDownloadData.data?.url || '';
+                                            log.push(`[${new Date().toISOString()}] [CurseForge] /download url: ${modDownloadUrl ? 'SIM' : 'VAZIO'}`);
+                                        }
+                                    }
+                                }
+                                catch (e) {
+                                    log.push(`[${new Date().toISOString()}] [CurseForge] Erro na API: ${e}`);
+                                }
+                            }
+                            // Fallback manual com nome correto do arquivo (funciona na CDN do CurseForge)
+                            if (!modDownloadUrl) {
+                                const idStr = String(currentFileId);
+                                const part1 = idStr.substring(0, idStr.length - 3) || '0';
+                                const part2 = idStr.substring(idStr.length - 3).padStart(3, '0');
+                                modDownloadUrl = `https://edge.forgecdn.net/files/${part1}/${part2}/${modFileName}`;
+                            }
+                            if (modDownloadUrl) {
+                                const modDest = path_1.default.join(modsDir, modFileName);
+                                await downloadFile(modDownloadUrl, modDest);
+                                downloadedCount++;
+                            }
+                            // Enfileira dependências obrigatórias
+                            for (const dep of fileDependencies) {
+                                if (dep.relationType === 3 && !processedMods.has(dep.modId)) { // 3 = RequiredDependency
+                                    log.push(`[${new Date().toISOString()}] [CurseForge] Dependência encontrada: modId ${dep.modId}, adicionando à fila.`);
+                                    downloadQueue.push({ projectID: dep.modId });
+                                }
+                            }
+                        }
+                        catch (modErr) {
+                            log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar mod ${modInfo.projectID}/${modInfo.fileID}: ${modErr.message}`);
+                        }
+                    }
+                    log.push(`[${new Date().toISOString()}] Mods baixados (incluindo dependências): ${downloadedCount}`);
+                }
+            }
+            catch (e) {
+                log.push(`[${new Date().toISOString()}] AVISO: Falha ao processar manifest.json: ${e.message}`);
+            }
+        }
+        // Remove mods client-side que podem causar crashes no servidor
+        log.push(`[${new Date().toISOString()}] Removendo mods client-side...`);
+        await removeClientSideMods(modsDir, log);
+        // Loader já configurado anteriormente no fluxo (installForge/installNeoForge/configureFabric)
+        // Não chama configureLoader aqui para evitar duplicação de instalação
+        // Corrige permissões para o usuário pterodactyl (UID 999 no container Docker)
+        log.push(`[${new Date().toISOString()}] Corrigindo permissoes...`);
+        try {
+            // Tenta chown para pterodactyl (pode falhar se user não existir no host)
+            await execAsync(`chown -R 999:999 ${serverDir} 2>/dev/null || chown -R pterodactyl:pterodactyl ${serverDir} 2>/dev/null || true`);
+            // Garante acesso total para o container ler os arquivos
+            await execAsync(`chmod -R 777 ${serverDir}`);
+            log.push(`[${new Date().toISOString()}] Permissoes corrigidas com sucesso`);
+        }
+        catch (e) {
+            log.push(`[${new Date().toISOString()}] AVISO: Falha ao corrigir permissoes: ${e?.message || e}`);
+        }
+        // Verifica se o modpack já tem conteúdo de servidor (Server Pack)
+        const hasStartupScript = (await promises_1.default.readdir(serverDir)).some((f) => f === 'startserver.sh' || f === 'run.sh' || f === 'run.bat');
+        const hasForgeUniversal = (await promises_1.default.readdir(serverDir)).some((f) => /^forge-.+-universal\.jar$/.test(f));
+        const isServerPackComplete = isServerPack || hasStartupScript || hasForgeUniversal;
+        if (isServerPackComplete) {
+            log.push(`[${new Date().toISOString()}] Server Pack detectado (mods=${hasModsDir}, config=${hasConfigDir}, script=${hasStartupScript}, forge=${hasForgeUniversal}, neoforge=${hasNeoForgeInstaller})`);
+            log.push(`[${new Date().toISOString()}] Pulando download de server.jar vanilla`);
+        }
+        // Verifica se server.jar existe - ESSENCIAL para iniciar
+        const serverJarPath = path_1.default.join(serverDir, 'server.jar');
+        if (!isServerPackComplete && !await fileExists(serverJarPath)) {
+            log.push(`[${new Date().toISOString()}] AVISO: server.jar não encontrado após configuração!`);
+            // Tenta baixar server.jar vanilla como último recurso
+            try {
+                const mcVersion = version.minecraftVersion || '1.20.1';
+                log.push(`[${new Date().toISOString()}] Tentando download fallback do server.jar (MC ${mcVersion})...`);
+                // Busca URL correta do server.jar na API do Mojang
+                const manifestRes = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
+                const manifest = await manifestRes.json();
+                const versionInfo = manifest.versions.find((v) => v.id === mcVersion);
+                if (!versionInfo) {
+                    throw new Error(`Versão ${mcVersion} não encontrada no manifesto Mojang`);
+                }
+                const versionJsonRes = await fetch(versionInfo.url);
+                const versionJson = await versionJsonRes.json();
+                const serverUrl = versionJson.downloads?.server?.url;
+                if (!serverUrl) {
+                    throw new Error('URL do server.jar não disponível no manifesto');
+                }
+                await downloadFile(serverUrl, serverJarPath);
+                log.push(`[${new Date().toISOString()}] server.jar fallback baixado: ${mcVersion}`);
+            }
+            catch (e) {
+                log.push(`[${new Date().toISOString()}] ERRO CRÍTICO: Não foi possível obter server.jar: ${e?.message || e}`);
+                throw new Error('server.jar não encontrado após instalação');
+            }
+        }
+        else if (!isServerPack) {
+            log.push(`[${new Date().toISOString()}] server.jar verificado com sucesso`);
+        }
+        // Aceita EULA automaticamente
+        const eulaPath = path_1.default.join(serverDir, 'eula.txt');
+        try {
+            await promises_1.default.writeFile(eulaPath, 'eula=true\n');
+            log.push(`[${new Date().toISOString()}] EULA aceita automaticamente`);
+        }
+        catch (e) {
+            log.push(`[${new Date().toISOString()}] AVISO: Falha ao escrever eula.txt: ${e?.message || e}`);
+        }
+        log.push(`[${new Date().toISOString()}] Instalação concluída com sucesso!`);
+        await saveModpackMetadata(serverDir, version.modpack?.source || 'unknown', version.modpack, version);
+        // Atualiza status
+        const record = await index_1.prisma.serverModpack.findFirst({
+            where: { server_id: serverId }
+        });
+        if (record) {
+            await index_1.prisma.serverModpack.update({
+                where: { id: record.id },
+                data: {
+                    status: 'installed',
+                    install_log: getTruncatedLog(log),
+                    updated_at: new Date()
+                }
+            });
+        }
+        // Instala NeoForge se houver startserver.sh (instala sem iniciar)
+        const startScriptPath = path_1.default.join(serverDir, 'startserver.sh');
+        if (await fileExists(startScriptPath)) {
+            log.push(`[${new Date().toISOString()}] Instalando NeoForge via startserver.sh...`);
+            try {
+                await execAsync(`cd ${serverDir} && chmod +x startserver.sh && ATM10_INSTALL_ONLY=true ./startserver.sh`);
+                log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
+            }
+            catch (e) {
+                log.push(`[${new Date().toISOString()}] AVISO: Falha ao instalar NeoForge: ${e?.message || e}`);
+            }
+        }
+        // Inicia servidor automaticamente
+        log.push(`[${new Date().toISOString()}] Iniciando servidor...`);
+        try {
+            await startServer(serverId);
+            log.push(`[${new Date().toISOString()}] Servidor iniciado com sucesso!`);
+        }
+        catch (e) {
+            log.push(`[${new Date().toISOString()}] AVISO: Falha ao iniciar servidor: ${e?.message || String(e)}`);
+        }
+    }
+    catch (error) {
+        log.push(`[${new Date().toISOString()}] ERRO: ${error}`);
+        const record = await index_1.prisma.serverModpack.findFirst({
+            where: { server_id: serverId }
+        });
+        if (record) {
+            await index_1.prisma.serverModpack.update({
+                where: { id: record.id },
+                data: {
+                    status: 'error',
+                    install_log: getTruncatedLog(log),
+                    updated_at: new Date()
+                }
+            });
+        }
+    }
+    finally {
+        clearInterval(flushInterval);
+        // Detecta loader, pré-instala se necessário, e atualiza startup no painel
+        try {
+            const mcVersion = await detectMinecraftVersion(serverDir, version);
+            await detectAndConfigureStartup(serverId, serverDir, mcVersion, version);
+        }
+        catch (e) {
+            console.warn(`[Installer] Falha no detectAndConfigureStartup no finally: ${e?.message || e}`);
+        }
+    }
+}
+async function uninstallModpack(serverId) {
+    await index_1.prisma.serverModpack.deleteMany({
+        where: { server_id: serverId }
+    });
+}
+async function runCommandWithLog(command, log) {
+    try {
+        const { stdout, stderr } = await execAsync(command);
+        if (stdout) {
+            log.push(stdout.toString());
+        }
+        if (stderr) {
+            log.push(`[STDERR] ${stderr.toString()}`);
+        }
+    }
+    catch (error) {
+        if (error.stdout)
+            log.push(error.stdout.toString());
+        if (error.stderr)
+            log.push(`[STDERR] ${error.stderr.toString()}`);
+        throw error;
+    }
+}
+async function downloadFile(url, dest, redirectCount = 0) {
+    if (redirectCount > 5) {
+        throw new Error(`Muitos redirects ao baixar ${url}`);
+    }
+    console.log(`[Download] URL: ${url}`);
+    return new Promise((resolve, reject) => {
+        const client = url.startsWith('https:') ? https_1.default : http_1.default;
+        const file = (0, fs_1.createWriteStream)(dest);
+        let downloaded = 0;
+        let lastLog = 0;
+        const startTime = Date.now();
+        const request = client.get(url, { timeout: 600000 }, (response) => {
+            // Segue redirects (301, 302, 303, 307, 308)
+            if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
+                const redirectUrl = response.headers.location;
+                if (!redirectUrl) {
+                    file.close();
+                    promises_1.default.unlink(dest).catch(() => { });
+                    reject(new Error(`HTTP ${response.statusCode} sem header Location`));
+                    return;
+                }
+                file.close();
+                console.log(`[Download] Redirect ${response.statusCode} -> ${redirectUrl}`);
+                downloadFile(redirectUrl, dest, redirectCount + 1)
+                    .then(resolve)
+                    .catch(reject);
+                return;
+            }
+            if (response.statusCode !== 200) {
+                file.close();
+                promises_1.default.unlink(dest).catch(() => { });
+                reject(new Error(`HTTP ${response.statusCode} para ${url}`));
+                return;
+            }
+            response.on('data', (chunk) => {
+                downloaded += chunk.length;
+                if (downloaded - lastLog >= 10 * 1024 * 1024) {
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`[Download] ${(downloaded / 1024 / 1024).toFixed(1)} MB em ${elapsed}s`);
+                    lastLog = downloaded;
+                }
+            });
+            response.pipe(file);
+            file.on('finish', () => {
+                file.close();
+                console.log(`[Download] Concluído: ${dest} (${downloaded} bytes)`);
+                resolve();
+            });
+        });
+        request.on('error', (err) => {
+            file.close();
+            promises_1.default.unlink(dest).catch(() => { });
+            reject(err);
+        });
+        request.on('timeout', () => {
+            request.destroy();
+            file.close();
+            promises_1.default.unlink(dest).catch(() => { });
+            reject(new Error(`Timeout (10min) ao baixar ${url}`));
+        });
+        file.on('error', (err) => {
+            request.destroy();
+            promises_1.default.unlink(dest).catch(() => { });
+            reject(err);
+        });
+    });
+}
+async function cleanServerDirectory(serverDir) {
+    // Remove TUDO exceto arquivos de preservação
+    const preserve = ['.pteroignore', 'world_backup'];
+    const entries = await promises_1.default.readdir(serverDir);
+    for (const entry of entries) {
+        if (preserve.includes(entry))
+            continue;
+        const entryPath = path_1.default.join(serverDir, entry);
+        try {
+            await promises_1.default.rm(entryPath, { recursive: true, force: true });
+        }
+        catch (e) {
+            // Ignora erros de permissão
+        }
+    }
+}
+async function configureLoader(serverDir, version) {
+    // Configurações específicas para cada tipo de loader
+    switch (version.loader) {
+        case 'Forge':
+            await configureForge(serverDir, version);
+            break;
+        case 'Fabric':
+            await configureFabric(serverDir, version);
+            break;
+        case 'NeoForge':
+            await configureNeoForge(serverDir, version, []);
+            break;
+    }
+}
+async function configureForge(serverDir, version) {
+    // Configurações específicas do Forge
+    const forgeInstaller = `forge-${version.minecraftVersion}-${version.loaderVersion}-installer.jar`;
+    // Executa instalador do Forge se necessário
+}
+async function downloadModrinthMods(serverDir) {
+    // Lê modrinth.index.json e baixa os mods
+    const indexPath = path_1.default.join(serverDir, 'modrinth.index.json');
+    if (await directoryExists(indexPath)) {
+        const indexContent = await promises_1.default.readFile(indexPath, 'utf-8');
+        const index = JSON.parse(indexContent);
+        for (const file of index.files || []) {
+            // Ignora mods client-side (env.server === 'unsupported')
+            if (file.env?.server === 'unsupported') {
+                console.log(`[Modrinth] IGNORADO (Client-Side): ${file.path}`);
+                continue;
+            }
+            if (file.downloads && file.downloads.length > 0) {
+                const filePath = path_1.default.join(serverDir, file.path);
+                const fileDir = path_1.default.dirname(filePath);
+                await promises_1.default.mkdir(fileDir, { recursive: true });
+                try {
+                    await downloadFile(file.downloads[0], filePath);
+                }
+                catch (e) {
+                    console.error(`[Modrinth] Falha ao baixar ${file.path}:`, e);
+                }
+            }
+        }
+    }
+}
+async function configureFabric(serverDir, version) {
+    // Baixa mods do modrinth.index.json se existir (chamado também no fluxo principal)
+    await downloadModrinthMods(serverDir);
+    // Cria eula.txt
+    const eulaPath = path_1.default.join(serverDir, 'eula.txt');
+    if (!await directoryExists(eulaPath)) {
+        await promises_1.default.writeFile(eulaPath, 'eula=true\n');
+    }
+    // Detecta versão do Minecraft e dos modloaders
+    let mcVersion = version.minecraftVersion || '1.20.1';
+    let fabricLoaderVersion = '0.15.11'; // Fallback mais moderno
+    let detectedForgeVersion = ''; // Versão do Forge detectada do manifest
+    try {
+        // 1. Tenta ler do manifest.json (CurseForge)
+        const manifestPath = path_1.default.join(serverDir, 'manifest.json');
+        if (await fileExists(manifestPath)) {
+            const manifestContent = await promises_1.default.readFile(manifestPath, 'utf-8');
+            const manifest = JSON.parse(manifestContent);
+            if (manifest.minecraft?.version) {
+                mcVersion = manifest.minecraft.version;
+                console.log(`[Fabric] Minecraft version detectada no manifest.json: ${mcVersion}`);
+            }
+            const loaders = manifest.minecraft?.modLoaders || [];
+            const fabricLoader = loaders.find((l) => l.id && l.id.startsWith('fabric-'));
+            if (fabricLoader) {
+                fabricLoaderVersion = fabricLoader.id.replace('fabric-', '');
+                console.log(`[Fabric] Fabric Loader version detectada no manifest.json: ${fabricLoaderVersion}`);
+            }
+            // Detecta versão do Forge do manifest
+            const forgeLoader = loaders.find((l) => l.id && l.id.startsWith('forge-'));
+            if (forgeLoader) {
+                detectedForgeVersion = forgeLoader.id.replace('forge-', '');
+                console.log(`[Forge] Forge version detectada no manifest.json: ${detectedForgeVersion}`);
+            }
+        }
+        // 2. Tenta ler do modrinth.index.json como fallback
+        const indexPath = path_1.default.join(serverDir, 'modrinth.index.json');
+        if (await directoryExists(indexPath)) {
+            const indexContent = await promises_1.default.readFile(indexPath, 'utf-8');
+            const index = JSON.parse(indexContent);
+            // Extrai versão do Minecraft das dependências
+            const gameVersion = index.dependencies?.minecraft;
+            if (gameVersion) {
+                mcVersion = gameVersion;
+                console.log(`[Fabric] Minecraft version detectada no modrinth.index.json: ${mcVersion}`);
+            }
+            // Extrai versão do Fabric Loader
+            const loaderDep = index.dependencies?.['fabric-loader'];
+            if (loaderDep) {
+                fabricLoaderVersion = loaderDep;
+                console.log(`[Fabric] Fabric Loader version detectada no modrinth.index.json: ${fabricLoaderVersion}`);
+            }
+        }
+    }
+    catch (e) {
+        console.warn('[Fabric] Falha ao ler manifest.json ou modrinth.index.json:', e);
+    }
+    // Baixa Fabric installer e cria server.jar
+    const fabricInstallerUrl = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/${fabricLoaderVersion}/0.11.2/server/jar`;
+    const serverJarPath = path_1.default.join(serverDir, 'server.jar');
+    console.log(`[Fabric] Download server.jar: ${fabricInstallerUrl}`);
+    try {
+        await downloadFile(fabricInstallerUrl, serverJarPath);
+        console.log('[Fabric] server.jar baixado com sucesso');
+    }
+    catch (e) {
+        console.error('[Fabric] Falha ao baixar server.jar:', e?.message || e);
+        // Fallback: tenta versão genérica
+        try {
+            const fallbackUrl = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/0.15.7/0.11.2/server/jar`;
+            console.log(`[Fabric] Tentando fallback: ${fallbackUrl}`);
+            await downloadFile(fallbackUrl, serverJarPath);
+        }
+        catch (e2) {
+            console.error('[Fabric] Fallback também falhou');
+        }
+    }
+}
+async function configureNeoForge(serverDir, version, log) {
+    // Detecta versão do Minecraft e do NeoForge
+    let mcVersion = version.minecraftVersion || '1.21.1';
+    let neoForgeVersion = version.loaderVersion || '';
+    try {
+        const manifestPath = path_1.default.join(serverDir, 'manifest.json');
+        if (await fileExists(manifestPath)) {
+            const manifestContent = await promises_1.default.readFile(manifestPath, 'utf-8');
+            const manifest = JSON.parse(manifestContent);
+            if (manifest.minecraft?.version) {
+                mcVersion = manifest.minecraft.version;
+            }
+            const loaders = manifest.minecraft?.modLoaders || [];
+            const neoForgeLoader = loaders.find((l) => l.id && l.id.startsWith('neoforge-'));
+            if (neoForgeLoader) {
+                neoForgeVersion = neoForgeLoader.id.replace('neoforge-', '');
+            }
+        }
+        const indexPath = path_1.default.join(serverDir, 'modrinth.index.json');
+        if (await directoryExists(indexPath)) {
+            const indexContent = await promises_1.default.readFile(indexPath, 'utf-8');
+            const index = JSON.parse(indexContent);
+            if (index.dependencies?.minecraft) {
+                mcVersion = index.dependencies.minecraft;
+            }
+            if (index.dependencies?.['neoforge']) {
+                neoForgeVersion = index.dependencies['neoforge'];
+            }
+        }
+    }
+    catch (e) {
+        // Ignora erros de leitura
+    }
+    if (!neoForgeVersion) {
+        const neoForgeVersions = {
+            '1.20.1': '20.2.59',
+            '1.20.4': '20.4.237',
+            '1.20.6': '20.6.119',
+            '1.21.1': '21.1.143',
+            '1.21.4': '21.4.47',
+        };
+        neoForgeVersion = neoForgeVersions[mcVersion] || '';
+    }
+    if (!neoForgeVersion) {
+        log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada para NeoForge. Abortando.`);
+        throw new Error(`Versão do NeoForge não mapeada para Minecraft ${mcVersion}`);
+    }
+    const neoForgeInstaller = `neoforge-${neoForgeVersion}-installer.jar`;
+    const installerPath = path_1.default.join(serverDir, neoForgeInstaller);
+    const neoForgeInstallerExists = await fileExists(installerPath);
+    if (neoForgeInstallerExists) {
+        log.push(`[${new Date().toISOString()}] Instalador NeoForge já existe em ${installerPath}, pulando download`);
+    }
+    else {
+        const neoForgeUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoForgeVersion}/${neoForgeInstaller}`;
+        log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
+        try {
+            await downloadFile(neoForgeUrl, installerPath);
+        }
+        catch (neoDownloadErr) {
+            log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+            throw new Error(`Não foi possível baixar o instalador do NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+        }
+    }
+    log.push(`[${new Date().toISOString()}] Instalando NeoForge...`);
+    const javaImage = getJavaImageForVersion(mcVersion);
+    await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${neoForgeInstaller} -installServer`, log);
+    log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
+}
+async function getPanelApiKey() {
+    try {
+        const result = await index_1.prisma.$queryRaw `SELECT value FROM modpack_settings WHERE \`key\` = 'panel_api_key' LIMIT 1`;
+        return result?.[0]?.value || null;
+    }
+    catch {
+        return null;
+    }
+}
+async function getServerInternalId(serverId) {
+    const apiKey = await getPanelApiKey();
+    if (!apiKey)
+        return null;
+    try {
+        // Busca todos os servidores para encontrar o ID interno pelo UUID
+        const response = await fetch('https://host.foxy-mc.com/api/application/servers', {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Accept': 'application/json'
+            }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            const servers = data.data || [];
+            const server = servers.find((s) => s.attributes?.uuid === serverId || s.attributes?.identifier === serverId);
+            if (server) {
+                console.log(`[API] Servidor encontrado: ID interno=${server.attributes?.id}`);
+                return String(server.attributes?.id);
+            }
+        }
+    }
+    catch (e) {
+        console.error('[API] Falha ao buscar ID interno:', e);
+    }
+    return null;
+}
+async function startServer(serverId) {
+    const apiKey = await getPanelApiKey();
+    if (!apiKey) {
+        console.warn('[AutoStart] API Key do painel não configurada. Configure em Admin > Modpack Settings.');
+        return;
+    }
+    try {
+        // Client API usa UUID
+        const response = await fetch(`https://host.foxy-mc.com/api/client/servers/${serverId}/power`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ signal: 'start' })
+        });
+        if (response.ok) {
+            console.log(`[AutoStart] Comando de start enviado para o servidor ${serverId}`);
+        }
+        else {
+            const errorData = await response.text();
+            console.error(`[AutoStart] API retornou ${response.status}: ${errorData}`);
+        }
+    }
+    catch (e) {
+        console.error('[AutoStart] Falha ao iniciar servidor:', e?.message || String(e));
+    }
+}
+async function detectAndConfigureStartup(serverId, serverDir, mcVersion, version) {
+    let files = await promises_1.default.readdir(serverDir);
+    let startupCommand = null;
+    let detectedLoader = 'unknown';
+    // --- ETAPA 0: Pré-instala Forge/NeoForge com Docker se necessário ---
+    const installerJar = files.find((f) => (f.startsWith('forge-') || f.startsWith('neoforge-')) && f.endsWith('-installer.jar'));
+    if (installerJar) {
+        const serverJar = installerJar.replace('-installer.jar', '.jar');
+        const librariesExist = await directoryExists(path_1.default.join(serverDir, 'libraries'));
+        const jarExists = await fileExists(path_1.default.join(serverDir, serverJar));
+        if (!librariesExist || !jarExists) {
+            console.log(`[Detector] Pré-instalando ${installerJar} via Docker...`);
+            try {
+                const javaImage = getJavaImageForVersion(mcVersion);
+                await execAsync(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${installerJar} --installServer`);
+                console.log(`[Detector] Forge instalado com sucesso`);
+                // Re-escaneia arquivos após instalação
+                files = await promises_1.default.readdir(serverDir);
+            }
+            catch (e) {
+                console.error(`[Detector] ERRO na pré-instalação: ${e?.message || e}`);
+            }
+        }
+    }
+    // --- ETAPA 1: Detecta loader a partir dos dados do modpack ---
+    let modpackType = 'unknown';
+    if (version) {
+        const loaderFromVer = (version.modpack?.modloader || version.loader || '').toLowerCase();
+        if (loaderFromVer.includes('fabric'))
+            modpackType = 'fabric';
+        else if (loaderFromVer.includes('neoforge'))
+            modpackType = 'neoforge';
+        else if (loaderFromVer.includes('forge'))
+            modpackType = 'forge';
+        else if (loaderFromVer.includes('quilt'))
+            modpackType = 'quilt';
+        else if (loaderFromVer.includes('vanilla'))
+            modpackType = 'vanilla';
+        console.log(`[Detector] Loader from DB: ${modpackType}`);
+    }
+    // --- ETAPA 2: Detecta loader a partir dos arquivos no disco ---
+    // NeoForge/Forge: startserver.sh
+    if (files.includes('startserver.sh')) {
+        console.log('[Detector] startserver.sh encontrado');
+        detectedLoader = 'neoforge'; // ou forge, mas startserver.sh é tipicamente NeoForge
+        startupCommand = 'bash startserver.sh';
+    }
+    // Forge: run.sh
+    else if (files.includes('run.sh')) {
+        console.log('[Detector] run.sh encontrado');
+        detectedLoader = 'forge';
+        startupCommand = 'bash run.sh';
+    }
+    // NeoForge: unix_args.txt
+    else {
+        const neoForgePattern = /libraries\/net\/neoforged\/neoforge\/([^/]+)\/unix_args\.txt/;
+        const neoForgeMatch = files.find(f => neoForgePattern.test(f));
+        if (neoForgeMatch) {
+            const nfMatch = neoForgeMatch.match(neoForgePattern);
+            if (nfMatch) {
+                console.log(`[Detector] NeoForge unix_args.txt encontrado (v${nfMatch[1]})`);
+                detectedLoader = 'neoforge';
+                startupCommand = `java @user_jvm_args.txt @libraries/net/neoforged/neoforge/${nfMatch[1]}/unix_args.txt nogui`;
+            }
+        }
+    }
+    // Forge: forge-*-universal.jar
+    if (!startupCommand) {
+        const mcVerSafe = mcVersion.replace(/\./g, '\\.');
+        const universalPattern = new RegExp(`^forge-${mcVerSafe}-.+-universal\\.jar$`, 'i');
+        let forgeUniversal = files.find((f) => universalPattern.test(f));
+        if (!forgeUniversal) {
+            forgeUniversal = files.find((f) => /^forge-.+-universal\.jar$/.test(f));
+        }
+        if (forgeUniversal) {
+            console.log(`[Detector] Forge universal jar: ${forgeUniversal}`);
+            detectedLoader = 'forge';
+            startupCommand = `java -jar ${forgeUniversal} nogui`;
+        }
+    }
+    // Forge: forge-*.jar (sem installer)
+    if (!startupCommand) {
+        const mcVerSafe = mcVersion.replace(/\./g, '\\.');
+        const forgeJarPattern = new RegExp(`^forge-${mcVerSafe}-.+\.jar$`, 'i');
+        let forgeJar = files.find((f) => forgeJarPattern.test(f) && !f.includes('-installer'));
+        if (!forgeJar) {
+            forgeJar = files.find((f) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+        }
+        if (forgeJar) {
+            console.log(`[Detector] Forge jar: ${forgeJar}`);
+            detectedLoader = 'forge';
+            startupCommand = `java -jar ${forgeJar} nogui`;
+        }
+    }
+    // Fabric: fabric-server-launch.jar
+    if (!startupCommand && files.includes('fabric-server-launch.jar')) {
+        console.log('[Detector] Fabric server launch encontrado');
+        detectedLoader = 'fabric';
+        startupCommand = 'java -jar fabric-server-launch.jar nogui';
+    }
+    // Quilt: quilt-server-launch.jar
+    if (!startupCommand && files.includes('quilt-server-launch.jar')) {
+        console.log('[Detector] Quilt server launch encontrado');
+        detectedLoader = 'quilt';
+        startupCommand = 'java -jar quilt-server-launch.jar nogui';
+    }
+    // Vanilla: server.jar (último recurso)
+    if (!startupCommand && files.includes('server.jar')) {
+        console.log('[Detector] server.jar encontrado (fallback vanilla)');
+        detectedLoader = 'vanilla';
+        startupCommand = 'java -jar server.jar nogui';
+    }
+    // --- ETAPA 3: Se não detectou loader mas tem mods/config, é "files_only" ---
+    const hasMods = await directoryExists(path_1.default.join(serverDir, 'mods'));
+    const hasConfig = await directoryExists(path_1.default.join(serverDir, 'config'));
+    if (!startupCommand && (hasMods || hasConfig)) {
+        console.log(`[Detector] Modpack sem loader detectado (files_only). Mods: ${hasMods}, Config: ${hasConfig}`);
+        // Usa o loader do banco de dados, ou tenta inferir
+        if (modpackType !== 'unknown') {
+            detectedLoader = modpackType;
+        }
+        else {
+            // Tenta inferir olhando os mods
+            try {
+                const modFiles = await promises_1.default.readdir(path_1.default.join(serverDir, 'mods'));
+                const hasFabric = modFiles.some((f) => f.includes('fabric') || f.includes('cloth-config'));
+                const hasForge = modFiles.some((f) => f.includes('forge') || f.includes('ftb'));
+                detectedLoader = hasFabric && !hasForge ? 'fabric' : 'forge';
+            }
+            catch (e) {
+                detectedLoader = 'forge'; // fallback mais comum
+            }
+        }
+        console.log(`[Detector] Loader inferido para instalação automática: ${detectedLoader}`);
+        // Instala o loader automaticamente
+        try {
+            if (detectedLoader === 'fabric') {
+                await installFabricLoader(serverDir, mcVersion);
+                if (files.includes('fabric-server-launch.jar') || await fileExists(path_1.default.join(serverDir, 'fabric-server-launch.jar'))) {
+                    startupCommand = 'java -jar fabric-server-launch.jar nogui';
+                }
+            }
+            else if (detectedLoader === 'forge') {
+                await installForgeFromManifest(serverDir, mcVersion, version);
+                // Re-escaneia para achar o jar criado
+                const updatedFiles = await promises_1.default.readdir(serverDir);
+                const forgeJar = updatedFiles.find((f) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+                if (forgeJar) {
+                    startupCommand = `java -jar ${forgeJar} nogui`;
+                }
+            }
+            else if (detectedLoader === 'neoforge') {
+                await installNeoForgeFromManifest(serverDir, mcVersion, version);
+                if (files.includes('startserver.sh') || await fileExists(path_1.default.join(serverDir, 'startserver.sh'))) {
+                    startupCommand = 'bash startserver.sh';
+                }
+            }
+        }
+        catch (e) {
+            console.error(`[Detector] Falha ao instalar loader automaticamente: ${e?.message || e}`);
+        }
+    }
+    // --- ETAPA 4: Cria auto-install.sh como wrapper SEMPRE ---
+    console.log(`[Detector] Criando auto-install.sh para o modpack...`);
+    const wrapperScript = `#!/bin/bash
+INSTALLER_JAR="${installerJar || ''}"
+LOG_FILE="installer.log"
+
+# Pre-baixa o server.jar para 1.12.2 se necessario para evitar erro no Forge Installer
+if [ -n "$INSTALLER_JAR" ]; then
+  MC_VERSION=$(echo "$INSTALLER_JAR" | cut -d'-' -f2)
+  SERVER_JAR_NAME="minecraft_server.$MC_VERSION.jar"
+  if [ "$MC_VERSION" = "1.12.2" ] && [ ! -f "$SERVER_JAR_NAME" ]; then
+    echo "[Modpack Installer] Pre-downloading vanilla server.jar for 1.12.2..."
+    curl -fsSL "https://piston-data.mojang.com/v1/objects/886945bfb2b978778c3a0288fd7fab09d315b25f/server.jar" -o "$SERVER_JAR_NAME"
+    cp "$SERVER_JAR_NAME" "server.jar"
+  fi
+fi
+
+if [ -f "Install.sh" ] && [ ! -d "libraries" ]; then
+  echo "[Modpack Installer] Rodando Install.sh do modpack..."
+  bash Install.sh
+fi
+
+if [ -n "$INSTALLER_JAR" ]; then
+  EXPECTED_JAR="\${INSTALLER_JAR/-installer.jar/.jar}"
+  findForgeJar() {
+    [ -f "$EXPECTED_JAR" ] && { echo "$EXPECTED_JAR"; return; }
+    local universal=$(ls -1 forge-*-universal.jar 2>/dev/null | head -1)
+    [ -n "$universal" ] && { echo "$universal"; return; }
+    local forgejar=$(ls -1 forge-*.jar 2>/dev/null | grep -v installer | head -1)
+    [ -n "$forgejar" ] && { echo "$forgejar"; return; }
+    echo ""
+  }
+
+  SERVER_JAR=$(findForgeJar)
+  if [ -z "$SERVER_JAR" ]; then
+    echo "[Modpack Installer] Install.sh nao gerou o Forge jar. Rodando instalador manual..."
+    if [ "$MC_VERSION" = "1.12.2" ]; then
+      echo "[Modpack Installer] Usando instalador atualizado do Forge (2860) para corrigir links quebrados..."
+      curl -fsSL "https://maven.minecraftforge.net/net/minecraftforge/forge/1.12.2-14.23.5.2860/forge-1.12.2-14.23.5.2860-installer.jar" -o "forge-fix-installer.jar"
+      java -jar "forge-fix-installer.jar" -installServer > "$LOG_FILE" 2>&1
+      # Renomear para a versao antiga esperada pelo LaunchServer.sh
+      OLD_VER=$(echo "$INSTALLER_JAR" | grep -oE '14\\.23\\.5\\.[0-9]+' | head -1)
+      if [ -n "$OLD_VER" ]; then
+        if [ -f "forge-1.12.2-14.23.5.2860-universal.jar" ]; then
+          cp "forge-1.12.2-14.23.5.2860-universal.jar" "forge-1.12.2-$OLD_VER-universal.jar"
+        elif [ -f "forge-1.12.2-14.23.5.2860.jar" ]; then
+          cp "forge-1.12.2-14.23.5.2860.jar" "forge-1.12.2-$OLD_VER-universal.jar"
+        fi
+      fi
+    else
+      java -jar "$INSTALLER_JAR" -installServer > "$LOG_FILE" 2>&1
+    fi
+    SERVER_JAR=$(findForgeJar)
+  fi
+fi
+
+if [ -f "LaunchServer.sh" ]; then
+  echo "[Modpack Installer] Starting via LaunchServer.sh..."
+  bash LaunchServer.sh
+elif [ -f "ServerStart.sh" ]; then
+  echo "[Modpack Installer] Starting via ServerStart.sh..."
+  bash ServerStart.sh
+elif [ -f "startserver.sh" ]; then
+  echo "[Modpack Installer] Starting via startserver.sh..."
+  bash startserver.sh
+elif [ -f "run.sh" ]; then
+  echo "[Modpack Installer] Starting via run.sh..."
+  bash run.sh
+else
+  SERVER_JAR=$(findForgeJar)
+  if [ -n "$SERVER_JAR" ]; then
+    echo "[Modpack Installer] Starting: $SERVER_JAR"
+    java -jar "$SERVER_JAR" nogui
+  else
+    echo "[Modpack Installer] Nao encontrou script nem jar."
+    exit 1
+  fi
+fi
+`;
+    await promises_1.default.writeFile(path_1.default.join(serverDir, 'auto-install.sh'), wrapperScript, 'utf-8');
+    await execAsync(`chmod +x ${path_1.default.join(serverDir, 'auto-install.sh')}`);
+    startupCommand = 'bash auto-install.sh';
+    // --- ETAPA 5: Se ainda não tem startup, falha com erro claro ---
+    if (!startupCommand) {
+        console.error('[Detector] ERROR: Não foi possível detectar o loader nem script de startup.');
+        console.error('[Detector] Arquivos encontrados: ' + files.join(', '));
+        return null;
+    }
+    // Atualiza startup via API (opcional - requer API key configurada)
+    const apiKey = await getPanelApiKey();
+    if (!apiKey) {
+        console.warn('[Startup] API Key não configurada. Startup não atualizado no painel, mas auto-install.sh foi criado.');
+        return startupCommand;
+    }
+    try {
+        const internalId = await getServerInternalId(serverId);
+        if (!internalId) {
+            console.warn('[Startup] ID interno não encontrado, startup não atualizado.');
+            return startupCommand;
+        }
+        const getRes = await fetch(`https://host.foxy-mc.com/api/application/servers/${internalId}`, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Accept': 'application/json'
+            }
+        });
+        let serverData = {};
+        if (getRes.ok) {
+            const fullData = await getRes.json();
+            serverData = fullData.attributes || {};
+        }
+        const response = await fetch(`https://host.foxy-mc.com/api/application/servers/${internalId}/startup`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                startup: startupCommand,
+                environment: serverData.container?.environment || {},
+                egg: serverData.egg || 1,
+                image: getJavaImageForVersion(mcVersion),
+                skip_scripts: false
+            })
+        });
+        if (response.ok) {
+            console.log(`[Startup] Comando de startup atualizado: ${startupCommand}`);
+        }
+        else {
+            const errorData = await response.text();
+            console.error(`[Startup] API retornou ${response.status}: ${errorData}`);
+        }
+    }
+    catch (e) {
+        console.error('[Startup] Falha ao atualizar startup:', e?.message || String(e));
+    }
+    return startupCommand;
+}
+async function detectMinecraftVersion(serverDir, version) {
+    // 1. Tenta usar versao do banco de dados (relação modpack ou propriedades diretas)
+    if (version.modpack?.minecraft_version) {
+        return version.modpack.minecraft_version;
+    }
+    if (version.modpack?.minecraftVersion) {
+        return version.modpack.minecraftVersion;
+    }
+    if (version.minecraft_version) {
+        return version.minecraft_version;
+    }
+    if (version.minecraftVersion) {
+        return version.minecraftVersion;
+    }
+    // 2. Tenta extrair do manifest.json do modpack
+    try {
+        const manifestPath = path_1.default.join(serverDir, 'manifest.json');
+        if (await fileExists(manifestPath)) {
+            const content = await promises_1.default.readFile(manifestPath, 'utf-8');
+            const manifest = JSON.parse(content);
+            if (manifest.minecraft?.version) {
+                return manifest.minecraft.version;
+            }
+        }
+    }
+    catch (e) {
+        // ignora
+    }
+    // 3. Tenta inferir pelo nome do modpack
+    const modpackName = (version.modpack?.name || '').toLowerCase();
+    if (modpackName.includes('rlcraft'))
+        return '1.12.2';
+    if (modpackName.includes('stoneblock'))
+        return '1.12.2';
+    if (modpackName.includes('skyfactory') && modpackName.includes('4'))
+        return '1.12.2';
+    if (modpackName.includes('atm10') || modpackName.includes('all the mods 10'))
+        return '1.21.1';
+    if (modpackName.includes('atm9') || modpackName.includes('all the mods 9'))
+        return '1.20.1';
+    if (modpackName.includes('atm8') || modpackName.includes('all the mods 8'))
+        return '1.19.2';
+    // 4. Se tiver um instalador forge-xxx, tenta extrair a versão do nome do instalador
+    try {
+        const files = await promises_1.default.readdir(serverDir);
+        const installer = files.find(f => f.startsWith('forge-') && f.endsWith('-installer.jar'));
+        if (installer) {
+            // forge-1.12.2-14.23.5.2836-installer.jar -> extrai "1.12.2"
+            const parts = installer.split('-');
+            if (parts.length >= 2) {
+                const potentialVersion = parts[1];
+                if (potentialVersion.split('.').length >= 2) {
+                    return potentialVersion;
+                }
+            }
+        }
+    }
+    catch (e) {
+        // ignora
+    }
+    // 5. Fallback padrao
+    return '1.20.1';
+}
+function parseMcVersion(mcVersion) {
+    const parts = mcVersion.split('.').map(Number);
+    return parts.length >= 2 ? parts : [1, 0, 0];
+}
+function compareMcVersion(a, b) {
+    const av = parseMcVersion(a);
+    const bv = parseMcVersion(b);
+    for (let i = 0; i < Math.max(av.length, bv.length); i++) {
+        const avp = av[i] || 0;
+        const bvp = bv[i] || 0;
+        if (avp !== bvp)
+            return avp - bvp;
+    }
+    return 0;
+}
+function getJavaImageForVersion(mcVersion) {
+    // Range-based mapping: version >= threshold gets the specified image
+    const ranges = [
+        { min: '1.20.5', image: 'ghcr.io/ptero-eggs/yolks:java_21' },
+        { min: '1.17', image: 'ghcr.io/ptero-eggs/yolks:java_17' },
+        { min: '1.16', image: 'ghcr.io/ptero-eggs/yolks:java_11' },
+        { min: '1.0', image: 'ghcr.io/ptero-eggs/yolks:java_8' },
+    ];
+    for (const range of ranges) {
+        if (compareMcVersion(mcVersion, range.min) >= 0) {
+            return range.image;
+        }
+    }
+    return 'ghcr.io/ptero-eggs/yolks:java_17';
+}
+async function installForge(serverDir, mcVersion, log, specificForgeVersion) {
+    let forgeVersion = undefined;
+    if (specificForgeVersion) {
+        // Usa versão específica detectada do manifest
+        let extracted = specificForgeVersion;
+        if (!extracted.startsWith(mcVersion)) {
+            extracted = `${mcVersion}-${extracted}`;
+        }
+        forgeVersion = extracted;
+        log.push(`[${new Date().toISOString()}] Usando Forge ${forgeVersion} (passado como parametro)`);
+    }
+    else {
+        // Tenta detectar do manifest.json primeiro
+        try {
+            const manifestPath = path_1.default.join(serverDir, 'manifest.json');
+            if (await fileExists(manifestPath)) {
+                const manifestContent = await promises_1.default.readFile(manifestPath, 'utf-8');
+                const manifest = JSON.parse(manifestContent);
+                const loaders = manifest.minecraft?.modLoaders || [];
+                const forgeLoader = loaders.find((l) => l.id && l.id.startsWith('forge-'));
+                if (forgeLoader) {
+                    let extracted = forgeLoader.id.replace('forge-', '');
+                    // Exemplo: FTB pack diz forge-40.2.34 mas a maven precisa de 1.18.2-40.2.34
+                    if (!extracted.startsWith(mcVersion)) {
+                        extracted = `${mcVersion}-${extracted}`;
+                    }
+                    forgeVersion = extracted;
+                    log.push(`[${new Date().toISOString()}] Forge version detectada do manifest.json: ${forgeVersion}`);
+                }
+            }
+        }
+        catch (e) {
+            // Ignora erro, usa fallback
+        }
+        // Se nao detectou do manifest, usa mapeamento
+        if (!forgeVersion) {
+            const forgeVersions = {
+                '1.12.2': '1.12.2-14.23.5.2859',
+                '1.16.4': '1.16.4-35.1.37',
+                '1.16.5': '1.16.5-36.2.39',
+                '1.18.1': '1.18.1-39.1.2',
+                '1.18.2': '1.18.2-40.2.0',
+                '1.19.2': '1.19.2-43.2.0',
+                '1.19.4': '1.19.4-45.1.0',
+                '1.20.1': '1.20.1-47.2.0',
+                '1.20.4': '1.20.4-49.0.3',
+            };
+            if (forgeVersions[mcVersion]) {
+                forgeVersion = forgeVersions[mcVersion];
+            }
+            else {
+                log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada para Forge. Abortando.`);
+                throw new Error(`Versão do Forge não mapeada para Minecraft ${mcVersion}`);
+            }
+        }
+    }
+    if (!forgeVersion) {
+        throw new Error(`Versão do Forge não conhecida para Minecraft ${mcVersion}`);
+    }
+    const forgeInstaller = `forge-${forgeVersion}-installer.jar`;
+    const installerPath = path_1.default.join(serverDir, forgeInstaller);
+    // Se o instalador já existe (ex: server pack já incluiu), pula o download
+    const installerExists = await fileExists(installerPath);
+    if (installerExists) {
+        log.push(`[${new Date().toISOString()}] Instalador Forge já existe em ${installerPath}, pulando download`);
+    }
+    else {
+        const forgeUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/${forgeInstaller}`;
+        log.push(`[${new Date().toISOString()}] Baixando Forge ${forgeVersion}...`);
+        try {
+            await downloadFile(forgeUrl, installerPath);
+        }
+        catch (forgeDownloadErr) {
+            log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar Forge ${forgeVersion}: ${forgeDownloadErr.message}`);
+            // Se der 404, tenta versão recomendada mais genérica (última parte do version string)
+            if (forgeDownloadErr.message.includes('404')) {
+                const parts = forgeVersion.split('-');
+                const mcPart = parts[0];
+                const forgePart = parts[1] || '';
+                // Tenta sem a parte extra (ex: 1.12.2-14.23.5.2860 → 1.12.2-14.23.5.2860 é a única)
+                // Ou tenta com o formato mais comum
+                const altVersions = [
+                    `${mcPart}-${forgePart}`,
+                    `${mcPart}-${forgePart}-${mcPart}`,
+                ];
+                let downloaded = false;
+                for (const altVer of altVersions) {
+                    if (altVer === forgeVersion)
+                        continue;
+                    const altInstaller = `forge-${altVer}-installer.jar`;
+                    const altUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${altVer}/${altInstaller}`;
+                    log.push(`[${new Date().toISOString()}] Tentando versão alternativa: ${altUrl}`);
+                    try {
+                        await downloadFile(altUrl, installerPath);
+                        log.push(`[${new Date().toISOString()}] Forge alternativo baixado com sucesso: ${altVer}`);
+                        downloaded = true;
+                        break;
+                    }
+                    catch (e) {
+                        log.push(`[${new Date().toISOString()}] Alternativa ${altVer} também falhou: ${e.message}`);
+                    }
+                }
+                if (!downloaded) {
+                    // Último fallback: tenta no servidor antigo do Forge
+                    const fallbackUrl = `https://files.minecraftforge.net/maven/net/minecraftforge/forge/${forgeVersion}/${forgeInstaller}`;
+                    log.push(`[${new Date().toISOString()}] Tentando fallback no files.minecraftforge.net: ${fallbackUrl}`);
+                    try {
+                        await downloadFile(fallbackUrl, installerPath);
+                        log.push(`[${new Date().toISOString()}] Forge baixado via fallback com sucesso`);
+                        downloaded = true;
+                    }
+                    catch (fallbackErr) {
+                        log.push(`[${new Date().toISOString()}] Fallback também falhou: ${fallbackErr.message}`);
+                    }
+                }
+                if (!downloaded) {
+                    throw new Error(`Não foi possível baixar o instalador do Forge para ${mcVersion}. Verifique se a versão existe.`);
+                }
+            }
+            else {
+                throw forgeDownloadErr;
+            }
+        }
+    }
+    log.push(`[${new Date().toISOString()}] Instalando Forge...`);
+    const javaImage = getJavaImageForVersion(mcVersion);
+    await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${forgeInstaller} -installServer`, log);
+    log.push(`[${new Date().toISOString()}] Forge instalado com sucesso`);
+}
+async function installNeoForge(serverDir, mcVersion, log, specificNeoForgeVersion) {
+    let neoForgeVersion = undefined;
+    if (specificNeoForgeVersion) {
+        neoForgeVersion = specificNeoForgeVersion;
+        log.push(`[${new Date().toISOString()}] Usando NeoForge ${neoForgeVersion} (passado como parametro)`);
+    }
+    else {
+        // Tenta detectar do manifest.json
+        try {
+            const manifestPath = path_1.default.join(serverDir, 'manifest.json');
+            if (await fileExists(manifestPath)) {
+                const manifestContent = await promises_1.default.readFile(manifestPath, 'utf-8');
+                const manifest = JSON.parse(manifestContent);
+                const loaders = manifest.minecraft?.modLoaders || [];
+                const neoForgeLoader = loaders.find((l) => l.id && l.id.startsWith('neoforge-'));
+                if (neoForgeLoader) {
+                    neoForgeVersion = neoForgeLoader.id.replace('neoforge-', '');
+                    log.push(`[${new Date().toISOString()}] NeoForge version detectada do manifest.json: ${neoForgeVersion}`);
+                }
+            }
+        }
+        catch (e) {
+            // Ignora erro
+        }
+        // Fallback para mapeamento
+        if (!neoForgeVersion) {
+            const neoForgeVersions = {
+                '1.20.1': '20.2.59',
+                '1.20.4': '20.4.237',
+                '1.21.1': '21.1.143'
+            };
+            if (neoForgeVersions[mcVersion]) {
+                neoForgeVersion = neoForgeVersions[mcVersion];
+            }
+            else {
+                log.push(`[${new Date().toISOString()}] AVISO: Versao ${mcVersion} nao mapeada para NeoForge`);
+                throw new Error(`Versão do NeoForge não conhecida para Minecraft ${mcVersion}`);
+            }
+        }
+    }
+    const neoForgeInstaller = `neoforge-${neoForgeVersion}-installer.jar`;
+    const installerPath = path_1.default.join(serverDir, neoForgeInstaller);
+    const neoForgeInstallerExists = await fileExists(installerPath);
+    if (neoForgeInstallerExists) {
+        log.push(`[${new Date().toISOString()}] Instalador NeoForge já existe em ${installerPath}, pulando download`);
+    }
+    else {
+        const neoForgeUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoForgeVersion}/${neoForgeInstaller}`;
+        log.push(`[${new Date().toISOString()}] Baixando NeoForge ${neoForgeVersion}...`);
+        try {
+            await downloadFile(neoForgeUrl, installerPath);
+        }
+        catch (neoDownloadErr) {
+            log.push(`[${new Date().toISOString()}] AVISO: Falha ao baixar NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+            throw new Error(`Não foi possível baixar o instalador do NeoForge ${neoForgeVersion}: ${neoDownloadErr.message}`);
+        }
+    }
+    log.push(`[${new Date().toISOString()}] Instalando NeoForge...`);
+    const javaImage = getJavaImageForVersion(mcVersion);
+    await runCommandWithLog(`docker run --rm --user root -v ${serverDir}:/data -w /data ${javaImage} java -jar ${neoForgeInstaller} -installServer`, log);
+    log.push(`[${new Date().toISOString()}] NeoForge instalado com sucesso`);
+}
+async function installFabricLoader(serverDir, mcVersion) {
+    console.log(`[AutoInstall] Installing Fabric for MC ${mcVersion}...`);
+    const installerUrl = 'https://meta.fabricmc.net/v2/versions/installer';
+    const installerRes = await fetch(installerUrl);
+    const installerVersions = await installerRes.json();
+    const latestInstaller = installerVersions[0]?.url || 'https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.0/fabric-installer-1.0.0.jar';
+    const installerPath = path_1.default.join(serverDir, 'fabric-installer.jar');
+    await downloadFile(latestInstaller, installerPath);
+    await execAsync(`cd ${serverDir} && java -jar fabric-installer.jar server -mcversion ${mcVersion} -downloadMinecraft`);
+    console.log(`[AutoInstall] Fabric installed for MC ${mcVersion}`);
+}
+async function installForgeFromManifest(serverDir, mcVersion, version) {
+    console.log(`[AutoInstall] Installing Forge for MC ${mcVersion}...`);
+    const log = [];
+    // Tenta usar versão do banco de dados, senão undefined para que o installForge leia o manifest.json
+    const forgeVersion = version?.loaderVersion;
+    await installForge(serverDir, mcVersion, log, forgeVersion);
+    console.log(`[AutoInstall] Forge installation process finished for MC ${mcVersion}`);
+}
+async function installNeoForgeFromManifest(serverDir, mcVersion, version) {
+    console.log(`[AutoInstall] Installing NeoForge for MC ${mcVersion}...`);
+    const log = [];
+    const neoForgeVersion = version?.loaderVersion;
+    await installNeoForge(serverDir, mcVersion, log, neoForgeVersion);
+    console.log(`[AutoInstall] NeoForge installation process finished for MC ${mcVersion}`);
+}
+async function cleanServerDir(serverDir) {
+    const preserve = ['.pteroignore'];
+    const files = await promises_1.default.readdir(serverDir);
+    for (const file of files) {
+        if (preserve.includes(file))
+            continue;
+        const filePath = path_1.default.join(serverDir, file);
+        try {
+            const stats = await promises_1.default.stat(filePath);
+            if (stats.isDirectory()) {
+                await promises_1.default.rm(filePath, { recursive: true, force: true });
+            }
+            else {
+                await promises_1.default.unlink(filePath);
+            }
+        }
+        catch (e) {
+            // Ignora erros de permissão
+        }
+    }
+}
+async function directoryExists(path) {
+    try {
+        await promises_1.default.access(path);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+async function fileExists(path) {
+    try {
+        const stats = await promises_1.default.stat(path);
+        return stats.isFile();
+    }
+    catch {
+        return false;
+    }
+}
+async function getCurseForgeKey() {
+    try {
+        const result = await index_1.prisma.$queryRaw `SELECT value FROM modpack_settings WHERE \`key\` = 'curseforge_api_key' LIMIT 1`;
+        const dbKey = result?.[0]?.value;
+        if (dbKey && dbKey.trim() !== '') {
+            return dbKey;
+        }
+    }
+    catch { }
+    return process.env.CURSEFORGE_API_KEY || null;
+}
+function getTruncatedLog(logArray) {
+    const fullLog = logArray.join('\n');
+    if (fullLog.length > 60000) {
+        return `[... LOG TRUNCADO DEVIDO AO TAMANHO DE MODPACK MUITO GRANDE ...]\n\n` + fullLog.substring(fullLog.length - 60000);
+    }
+    return fullLog;
+}
+async function removeClientSideMods(modsDir, log) {
+    // A lista manual está definida na constante CLIENT_SIDE_MODS no topo do arquivo.
+    const clientSidePatterns = CLIENT_SIDE_MODS;
+    try {
+        if (!await directoryExists(modsDir)) {
+            return;
+        }
+        const files = await promises_1.default.readdir(modsDir);
+        const removed = [];
+        for (const file of files) {
+            if (!file.endsWith('.jar'))
+                continue;
+            const lowerFile = file.toLowerCase();
+            const isClientSide = clientSidePatterns.some(pattern => {
+                // Escapa caracteres especiais do pattern e cria uma regex com limites de palavra/hífen/underline
+                const escapedPattern = pattern.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp(`(^|[-_])${escapedPattern}([-_\\d.]|$)`, 'i');
+                return regex.test(lowerFile);
+            });
+            if (isClientSide) {
+                const filePath = path_1.default.join(modsDir, file);
+                await promises_1.default.unlink(filePath);
+                removed.push(file);
+                log.push(`[${new Date().toISOString()}] [ClientSide] Removido: ${file}`);
+            }
+        }
+        if (removed.length > 0) {
+            log.push(`[${new Date().toISOString()}] [ClientSide] Total de mods client-side removidos: ${removed.length}`);
+        }
+        else {
+            log.push(`[${new Date().toISOString()}] [ClientSide] Nenhum mod client-side detectado`);
+        }
+    }
+    catch (e) {
+        log.push(`[${new Date().toISOString()}] [ClientSide] AVISO: Falha ao remover mods client-side: ${e.message}`);
+    }
+}
+async function autoDetectModloader(serverDir, version, log) {
+    log.push(`[${new Date().toISOString()}] [Auto-Detector] Iniciando auto-detecção de Modloader...`);
+    let loader = 'Vanilla';
+    let loaderVersion = '';
+    let minecraftVersion = version?.modpack?.minecraft_version || version?.minecraft_version || version?.minecraftVersion || version?.modpack?.minecraftVersion || '';
+    // 1. Verifica manifest.json (CurseForge Pack)
+    try {
+        const manifestPath = path_1.default.join(serverDir, 'manifest.json');
+        if (await fileExists(manifestPath)) {
+            const content = await promises_1.default.readFile(manifestPath, 'utf-8');
+            const manifest = JSON.parse(content);
+            if (manifest.minecraft?.version) {
+                minecraftVersion = manifest.minecraft.version;
+            }
+            const loaders = manifest.minecraft?.modLoaders || [];
+            const primaryLoader = loaders[0];
+            if (primaryLoader && primaryLoader.id) {
+                const idLower = primaryLoader.id.toLowerCase();
+                if (idLower.startsWith('neoforge-')) {
+                    loader = 'NeoForge';
+                    loaderVersion = primaryLoader.id.replace(/^neoforge-/i, '');
+                }
+                else if (idLower.startsWith('forge-')) {
+                    loader = 'Forge';
+                    loaderVersion = primaryLoader.id.replace(/^forge-/i, '');
+                }
+                else if (idLower.startsWith('fabric-')) {
+                    loader = 'Fabric';
+                    loaderVersion = primaryLoader.id.replace(/^fabric-/i, '');
+                }
+                log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado do manifest.json: ${loader} v${loaderVersion} (Minecraft v${minecraftVersion})`);
+                return { loader, loaderVersion, minecraftVersion };
+            }
+        }
+    }
+    catch (e) {
+        log.push(`[${new Date().toISOString()}] [Auto-Detector] Aviso ao analisar manifest.json: ${e.message}`);
+    }
+    // 2. Verifica modrinth.index.json (Modrinth Pack)
+    try {
+        const indexPath = path_1.default.join(serverDir, 'modrinth.index.json');
+        if (await directoryExists(indexPath)) {
+            const content = await promises_1.default.readFile(indexPath, 'utf-8');
+            const index = JSON.parse(content);
+            if (index.dependencies?.minecraft) {
+                minecraftVersion = index.dependencies.minecraft;
+            }
+            if (index.dependencies?.['fabric-loader']) {
+                loader = 'Fabric';
+                loaderVersion = index.dependencies['fabric-loader'];
+            }
+            else if (index.dependencies?.['neoforge']) {
+                loader = 'NeoForge';
+                loaderVersion = index.dependencies['neoforge'];
+            }
+            else if (index.dependencies?.['forge']) {
+                loader = 'Forge';
+                loaderVersion = index.dependencies['forge'];
+            }
+            if (loader !== 'Vanilla') {
+                log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado do modrinth.index.json: ${loader} v${loaderVersion} (Minecraft v${minecraftVersion})`);
+                return { loader, loaderVersion, minecraftVersion };
+            }
+        }
+    }
+    catch (e) {
+        log.push(`[${new Date().toISOString()}] [Auto-Detector] Aviso ao analisar modrinth.index.json: ${e.message}`);
+    }
+    // 3. Varre arquivos para ver se há instaladores ou arquivos launcher já presentes
+    try {
+        const files = await promises_1.default.readdir(serverDir);
+        // NeoForge
+        const nfInstaller = files.find(f => f.startsWith('neoforge-') && f.endsWith('-installer.jar'));
+        if (nfInstaller) {
+            loader = 'NeoForge';
+            loaderVersion = nfInstaller.replace(/^neoforge-/i, '').replace(/-installer\.jar$/i, '');
+            log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado instalador NeoForge: ${nfInstaller}`);
+            return { loader, loaderVersion, minecraftVersion };
+        }
+        // Forge
+        const forgeInstaller = files.find(f => f.startsWith('forge-') && f.endsWith('-installer.jar'));
+        if (forgeInstaller) {
+            loader = 'Forge';
+            loaderVersion = forgeInstaller.replace(/^forge-/i, '').replace(/-installer\.jar$/i, '');
+            log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado instalador Forge: ${forgeInstaller}`);
+            return { loader, loaderVersion, minecraftVersion };
+        }
+        // Forge execution jar (ex: forge-1.16.5-36.2.34.jar)
+        const forgeJar = files.find((f) => /^forge-.+\.jar$/.test(f) && !f.includes('-installer'));
+        if (forgeJar) {
+            loader = 'Forge';
+            loaderVersion = forgeJar.replace(/^forge-/i, '').replace(/\.jar$/i, '');
+            log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado jar executável do Forge: ${forgeJar}`);
+            return { loader, loaderVersion, minecraftVersion };
+        }
+        // Fabric
+        if (files.includes('fabric-server-launch.jar') || files.some(f => f.startsWith('fabric-loader-') || f.startsWith('fabric-server-'))) {
+            loader = 'Fabric';
+            log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado arquivos Fabric no diretório`);
+            return { loader, loaderVersion, minecraftVersion };
+        }
+    }
+    catch (e) {
+        log.push(`[${new Date().toISOString()}] [Auto-Detector] Aviso ao ler diretório do servidor: ${e.message}`);
+    }
+    // 4. Fallback para os dados passados pelo banco de dados / frontend
+    const dbLoader = (version.modpack?.modloader || version.loader || '').toLowerCase();
+    if (dbLoader.includes('neoforge')) {
+        loader = 'NeoForge';
+    }
+    else if (dbLoader.includes('forge')) {
+        loader = 'Forge';
+    }
+    else if (dbLoader.includes('fabric')) {
+        loader = 'Fabric';
+    }
+    if (loader !== 'Vanilla') {
+        log.push(`[${new Date().toISOString()}] [Auto-Detector] Detectado do banco de dados/metadados: ${loader} (Minecraft v${minecraftVersion})`);
+    }
+    else {
+        log.push(`[${new Date().toISOString()}] [Auto-Detector] Nenhum modloader detectado, assumindo Vanilla`);
+    }
+    return { loader, loaderVersion, minecraftVersion };
+}
+//# sourceMappingURL=installer.js.map

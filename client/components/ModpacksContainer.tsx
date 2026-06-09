@@ -323,6 +323,7 @@ export default function ModpacksContainer() {
                 date_published: mod.latestFiles[0].fileDate,
                 downloads: 0,
                 version_type: "release",
+                isServerPack: !!mod.latestFiles[0].serverPackFileId,
               }
             : null,
         };
@@ -840,7 +841,14 @@ export default function ModpacksContainer() {
                 <div className="flex items-start gap-3 mb-3">
                   <img src={modpack.icon_url || "/default-modpack.png"} alt={modpack.title} className="w-12 h-12 rounded-lg object-cover border border-gray-600 flex-shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} />
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors">{modpack.title}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors">{modpack.title}</h3>
+                      {modpack.latest_version?.isServerPack && (
+                        <span className="bg-green-900/50 text-green-400 border border-green-700/50 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide whitespace-nowrap" title="Possui Server Pack Oficial">
+                          Server Pack
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-500 mt-0.5">{formatDownloads(modpack.downloads)} downloads</p>
                   </div>
                 </div>

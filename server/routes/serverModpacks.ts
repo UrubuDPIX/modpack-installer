@@ -419,7 +419,8 @@ router.get('/:id/modpack/versions', async (req, res) => {
       return res.json(data.data.map((f: any) => ({
         id: String(f.id),
         name: f.displayName || f.fileName,
-        game_versions: f.gameVersions
+        game_versions: f.gameVersions,
+        isServerPack: !!f.serverPackFileId
       })));
     }
   } catch (err: any) {
