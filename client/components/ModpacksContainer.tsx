@@ -162,11 +162,12 @@ export default function ModpacksContainer() {
         if (versions && versions.length > 0) {
           const latest = versions[0];
 
-          // Extract the core semantic version (e.g., 1.0.0-rc.6) from the string
           const extractVer = (str: string) => {
             if (!str) return '';
-            const match = str.match(/v?\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9.]+)?/i);
-            return match ? match[0].toLowerCase() : str.toLowerCase();
+            // Strip file extensions first
+            const cleanStr = str.replace(/\.(zip|jar|rar|tar\.gz|tgz|7z)$/i, '');
+            const match = cleanStr.match(/v?\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9.]+)?/i);
+            return match ? match[0].toLowerCase() : cleanStr.toLowerCase();
           };
           
           const latestVer = extractVer(latest.name);
