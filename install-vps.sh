@@ -461,19 +461,19 @@ const panelDir = process.argv[2];
             c.slice(firstImport.index);
       }
     }
-    const faIconsMatch = c.match(/import\s+\{([^}]*)\}\s+from\s+['"]@fortawesome\/free-solid-svg-icons['"];?/);
-    if (faIconsMatch) {
-      if (!faIconsMatch[1].includes('faBox')) {
+    if (!c.includes('faBox')) {
+      const faIconsMatch = c.match(/import\s+\{([^}]*)\}\s+from\s+['"]@fortawesome\/free-solid-svg-icons['"];?/);
+      if (faIconsMatch) {
         c = c.slice(0, faIconsMatch.index) +
             faIconsMatch[0].replace(faIconsMatch[1], faIconsMatch[1].trim() + ', faBox') +
             c.slice(faIconsMatch.index + faIconsMatch[0].length);
-      }
-    } else {
-      const firstImport = c.match(/^import .*;$/m);
-      if (firstImport) {
-        c = c.slice(0, firstImport.index) +
-            "import { faBox } from '@fortawesome/free-solid-svg-icons';\n" +
-            c.slice(firstImport.index);
+      } else {
+        const firstImport = c.match(/^import .*;$/m);
+        if (firstImport) {
+          c = c.slice(0, firstImport.index) +
+              "import { faBox } from '@fortawesome/free-solid-svg-icons';\n" +
+              c.slice(firstImport.index);
+        }
       }
     }
 
