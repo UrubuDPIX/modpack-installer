@@ -1270,6 +1270,41 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
     console.log(`[Detector] Criando auto-install.sh para o modpack...`);
     
     const wrapperScript = `#!/bin/bash
+# ----------------------------------------------------------------------
+# VERIFICADOR DE VERSÃO DO JAVA
+# Evita falhas silenciosas de startup devido a Java incorreto
+# ----------------------------------------------------------------------
+MC_VER="${mcVersion}"
+JAVA_VER=\$(java -version 2>&1 | head -1 | cut -d'"' -f2 | sed '/^1\\./s///' | cut -d'.' -f1)
+
+REQUIRED_JAVA=8
+if [[ "\$MC_VER" == 1.17* ]] || [[ "\$MC_VER" == 1.18* ]] || [[ "\$MC_VER" == 1.19* ]] || [[ "\$MC_VER" == 1.20* ]]; then
+  REQUIRED_JAVA=17
+elif [[ "\$MC_VER" == 1.21* ]]; then
+  REQUIRED_JAVA=21
+fi
+
+# Converte possiveis valores vazios para 0 e ignora erros
+if [ -n "\$JAVA_VER" ] && [ "\$JAVA_VER" -eq "\$JAVA_VER" ] 2>/dev/null; then
+  if [ "\$JAVA_VER" -lt "\$REQUIRED_JAVA" ]; then
+    echo ""
+    echo "=========================================================================="
+    echo "🚨 ERRO CRITICO: VERSAO DO JAVA INCOMPATIVEL COM O MODPACK 🚨"
+    echo "=========================================================================="
+    echo "O Modpack (Minecraft \$MC_VER) exige no minimo o Java \$REQUIRED_JAVA."
+    echo "Porem, a imagem Docker deste servidor esta rodando o Java \$JAVA_VER."
+    echo ""
+    echo "COMO RESOLVER:"
+    echo "1. No painel de controle, va ate a aba 'Startup' (Inicializacao)."
+    echo "2. Encontre a opcao 'Docker Image'."
+    echo "3. Mude a imagem para uma que suporte Java \$REQUIRED_JAVA (ex: ghcr.io/pterodactyl/yolks:java_\$REQUIRED_JAVA)."
+    echo "4. Inicie o servidor novamente."
+    echo "=========================================================================="
+    echo ""
+    exit 1
+  fi
+fi
+
 INSTALLER_JAR="${installerJar || ''}"
 LOG_FILE="installer.log"
 
