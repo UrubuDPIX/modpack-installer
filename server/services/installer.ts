@@ -1297,21 +1297,35 @@ fi
 # Compare versions
 if [ -n "\$JAVA_VER" ] && [ "\$JAVA_VER" -eq "\$JAVA_VER" ] 2>/dev/null; then
   if [ "\$JAVA_VER" -lt "\$REQUIRED_JAVA" ]; then
-    echo ""
     echo "=========================================================================="
-    echo "🚨 ERRO CRITICO: VERSAO DO JAVA INCOMPATIVEL COM O MODPACK 🚨"
+    echo "🚨 JAVA INCOMPATIVEL DETECTADO (\$JAVA_VER). O MODPACK EXIGE JAVA \$REQUIRED_JAVA 🚨"
     echo "=========================================================================="
-    echo "O Modpack (Minecraft \$MC_VER) exige no minimo o Java \$REQUIRED_JAVA."
-    echo "Porem, a imagem Docker deste servidor esta rodando o Java \$JAVA_VER."
-    echo ""
-    echo "COMO RESOLVER:"
-    echo "1. No painel de controle, va ate a aba 'Startup' (Inicializacao)."
-    echo "2. Encontre a opcao 'Docker Image'."
-    echo "3. Mude a imagem para uma que suporte Java \$REQUIRED_JAVA (ex: ghcr.io/pterodactyl/yolks:java_\$REQUIRED_JAVA)."
-    echo "4. Inicie o servidor novamente."
+    echo "Baixando Java \$REQUIRED_JAVA portatil para o servidor automaticamente..."
+    
+    JAVA_DIR=".java/jdk-\$REQUIRED_JAVA"
+    if [ ! -f "\$JAVA_DIR/bin/java" ]; then
+        mkdir -p "\$JAVA_DIR"
+        DL_URL="https://api.adoptium.net/v3/binary/latest/\$REQUIRED_JAVA/ga/linux/x64/jdk/hotspot/normal/eclipse"
+        
+        echo "Baixando JDK \$REQUIRED_JAVA (isso pode demorar um pouco)..."
+        if curl -L -f -o jdk.tar.gz "\$DL_URL"; then
+            echo "Extraindo JDK..."
+            tar -xzf jdk.tar.gz -C "\$JAVA_DIR" --strip-components=1
+            rm jdk.tar.gz
+            echo "Java \$REQUIRED_JAVA instalado com sucesso em \$JAVA_DIR"
+        else
+            echo "Falha ao baixar o Java \$REQUIRED_JAVA. O link pode estar indisponivel."
+            echo "Por favor, mude a imagem do Docker no painel (aba Startup) manualmente."
+            exit 1
+        fi
+    fi
+    
+    # Substitui a versão do Java no ambiente atual para rodar o servidor
+    export PATH="\$PWD/\$JAVA_DIR/bin:\$PATH"
+    export JAVA_HOME="\$PWD/\$JAVA_DIR"
+    
+    echo "Usando Java portatil: \$(java -version 2>&1 | head -1)"
     echo "=========================================================================="
-    echo ""
-    exit 1
   fi
 fi
 
