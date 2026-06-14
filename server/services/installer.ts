@@ -1489,6 +1489,7 @@ async function detectMinecraftVersion(serverDir: string, version: any): Promise<
   if (modpackName.includes('rlcraft')) return '1.12.2';
   if (modpackName.includes('stoneblock')) return '1.12.2';
   if (modpackName.includes('skyfactory') && modpackName.includes('4')) return '1.12.2';
+  if (modpackName.includes('atm11') || modpackName.includes('all the mods 11')) return '1.21.1';
   if (modpackName.includes('atm10') || modpackName.includes('all the mods 10')) return '1.21.1';
   if (modpackName.includes('atm9') || modpackName.includes('all the mods 9')) return '1.20.1';
   if (modpackName.includes('atm8') || modpackName.includes('all the mods 8')) return '1.19.2';
