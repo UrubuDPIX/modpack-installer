@@ -1280,14 +1280,17 @@ JAVA_VER=\$(java -version 2>&1 | awk -F '"' '/version/ {print \$2}' | awk -F. '{
 REQUIRED_JAVA=8
 if [[ "\$MC_VER" == 1.17* ]] || [[ "\$MC_VER" == 1.18* ]] || [[ "\$MC_VER" == 1.19* ]] || [[ "\$MC_VER" == 1.20* ]]; then
   REQUIRED_JAVA=17
-elif [[ "\$MC_VER" == 1.21* ]]; then
+elif [[ "\$MC_VER" == 1.21* ]] || [[ "\$MC_VER" == 1.22* ]] || [[ "\$MC_VER" == 1.23* ]] || [[ "\$MC_VER" == 1.24* ]]; then
   REQUIRED_JAVA=21
+elif [[ "\$MC_VER" == 26* ]] || [[ "\$MC_VER" == 25* ]]; then
+  REQUIRED_JAVA=25
 fi
 
 # Fallback: scan scripts if we still think it's Java 8
 if [ "\$REQUIRED_JAVA" -eq 8 ]; then
   if grep -qi "java 17" startserver.sh run.sh Install.sh 2>/dev/null; then REQUIRED_JAVA=17; fi
   if grep -qi "java 21" startserver.sh run.sh Install.sh 2>/dev/null; then REQUIRED_JAVA=21; fi
+  if grep -qi "java 25" startserver.sh run.sh Install.sh 2>/dev/null; then REQUIRED_JAVA=25; fi
   if grep -qi "java 11" startserver.sh run.sh Install.sh 2>/dev/null; then REQUIRED_JAVA=11; fi
 fi
 
@@ -1489,7 +1492,7 @@ async function detectMinecraftVersion(serverDir: string, version: any): Promise<
   if (modpackName.includes('rlcraft')) return '1.12.2';
   if (modpackName.includes('stoneblock')) return '1.12.2';
   if (modpackName.includes('skyfactory') && modpackName.includes('4')) return '1.12.2';
-  if (modpackName.includes('atm11') || modpackName.includes('all the mods 11')) return '1.21.1';
+  if (modpackName.includes('atm11') || modpackName.includes('all the mods 11')) return '26.1.2';
   if (modpackName.includes('atm10') || modpackName.includes('all the mods 10')) return '1.21.1';
   if (modpackName.includes('atm9') || modpackName.includes('all the mods 9')) return '1.20.1';
   if (modpackName.includes('atm8') || modpackName.includes('all the mods 8')) return '1.19.2';
