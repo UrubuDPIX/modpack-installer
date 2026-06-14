@@ -440,6 +440,11 @@ const panelDir = process.argv[2];
   c = c.replace(/<Route path=\{`\$\{match\.path\}\/modpacks\/[^`]*`\}[^>]*>[\s\S]*?<\/Route>\n?/g, '');
   // Remove NavLink de modpacks se existir
   c = c.replace(/<NavLink[^>]*to=\{`\$\{match\.url\}\/modpacks`\}[^>]*>[\s\S]*?<\/NavLink>\n?/g, '');
+  // Cleanup previously injected faBox
+  c = c.replace(/import\s*\{\s*faBox\s*\}\s*from\s*['"]@fortawesome\/free-solid-svg-icons['"];?\n?/g, '');
+  c = c.replace(/,\s*faBox/g, '');
+  c = c.replace(/faBox,\s*/g, '');
+  
   c = c.replace(/\n{3,}/g, '\n\n');
 
   if (!c.includes('ModpacksPage')) {
@@ -589,6 +594,11 @@ const panelDir = process.argv[2];
   if (!fs.existsSync(sePath)) return;
   let c = fs.readFileSync(sePath, 'utf8');
   c = c.replace(/<NavLink[^>]*\/modpacks[^>]*>[\s\S]*?<\/NavLink>\n?/g, '');
+  
+  // Cleanup previously injected faBox
+  c = c.replace(/import\s*\{\s*faBox\s*\}\s*from\s*['"]@fortawesome\/free-solid-svg-icons['"];?\n?/g, '');
+  c = c.replace(/,\s*faBox/g, '');
+  c = c.replace(/faBox,\s*/g, '');
   
   if (!c.includes('/modpacks')) {
     // Tenta encontrar plugins, se nao achar, tenta files
