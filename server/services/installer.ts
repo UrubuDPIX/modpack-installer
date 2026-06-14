@@ -1275,7 +1275,7 @@ async function detectAndConfigureStartup(serverId: string, serverDir: string, mc
 # Evita falhas silenciosas de startup devido a Java incorreto
 # ----------------------------------------------------------------------
 MC_VER="${mcVersion}"
-JAVA_VER=\$(java -version 2>&1 | head -1 | cut -d'"' -f2 | sed '/^1\\./s///' | cut -d'.' -f1)
+JAVA_VER=\$(java -version 2>&1 | awk -F '"' '/version/ {print \$2}' | awk -F. '{if (\$1 == 1) print \$2; else print \$1}')
 
 REQUIRED_JAVA=8
 if [[ "\$MC_VER" == 1.17* ]] || [[ "\$MC_VER" == 1.18* ]] || [[ "\$MC_VER" == 1.19* ]] || [[ "\$MC_VER" == 1.20* ]]; then
@@ -1284,7 +1284,14 @@ elif [[ "\$MC_VER" == 1.21* ]]; then
   REQUIRED_JAVA=21
 fi
 
-# Converte possiveis valores vazios para 0 e ignora erros
+# Fallback: scan scripts if we still think it's Java 8
+if [ "\$REQUIRED_JAVA" -eq 8 ]; then
+  if grep -qi "java 17" startserver.sh run.sh Install.sh 2>/dev/null; then REQUIRED_JAVA=17; fi
+  if grep -qi "java 21" startserver.sh run.sh Install.sh 2>/dev/null; then REQUIRED_JAVA=21; fi
+  if grep -qi "java 11" startserver.sh run.sh Install.sh 2>/dev/null; then REQUIRED_JAVA=11; fi
+fi
+
+# Compare versions
 if [ -n "\$JAVA_VER" ] && [ "\$JAVA_VER" -eq "\$JAVA_VER" ] 2>/dev/null; then
   if [ "\$JAVA_VER" -lt "\$REQUIRED_JAVA" ]; then
     echo ""
